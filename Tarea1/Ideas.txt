@@ -1,0 +1,27 @@
+Este archivo funcionara como borrador inicial para nuestras ideas, requerimientos y divagaciones sobre el codigo y el objetivo de este:
+
+Objetivo:
+  - Planificador Diechiosero ( a pesar que problablemente lo terminaremos despues :/ )
+
+Caracteristicas:
+  - Crear un Grafo Acíclico Dirigido (DAG)
+  - Leer un archivo de texto plano (.txt), formatearlo y reconocer cada dato y valores
+  - Asignacion Aleatoria de valores ante datos faltantes
+
+Requisitos:
+  - Invocacion simple de un solo formato ( ./planificador <Archivo.txt> <Limite> )
+  - Limite de concurrencia (K): No pueden haber mas de K procesos abiertos (parametro <Limite>)
+  - Cuando un proceso termine, debe de avisar a los procesos dependientes de ella atraves de Pipes
+  - Soportar Carga bajo estres, de hasta 10.000 Actividades
+
+Tolerancia a fallos:
+  - Si una actividad falla, se debe abortar solo los procesos que dependen de esa actividad, el simulador debe aguantar intacto
+  - Si el Usuario realiza la Syscall SIGINT (ctrl+c), se debe simular una abortacion de la simulacion ante autoridades de la SEREMI
+
+Restricciones:
+  - Solo permitido C o C++
+  - No se puede usar threads ni Sincronizacion
+  - Compilacion Estrica:
+    - C: gcc -Wall -Wextra -std=c17 -lpthread
+    - C++: g++ -Wall -Wextra -std=c++17 -lpthread
+  - Fecha de Entrega: 4 de Octubre 23:59 Horas
