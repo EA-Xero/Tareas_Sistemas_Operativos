@@ -3,6 +3,9 @@
 #include <sstream>  //para hacer operaciones I/O en los strings
 #include <string>   // Trabajar con strings
 #include <vector>   // Arrays Dinamicos
+#include <cstdlib>  // Para poder usar rand y srand en casos sin tiempo (nuevo)
+#include <ctime>    // Para poder usar time en casos sin tiempo (nuevo)
+#include <csignal>  // Para manejar SIGINT (nuevo)
 using namespace std;
 
 // Verificar que el archivo existe
@@ -137,6 +140,68 @@ vector<Actividad> leer_actividades(const string &ruta_archivo) {
   return lista_actividades;
 }
 
+/*
+  El codigo que funcionaria teoricamente seria este, pero lo dejo como comentario para no romper nada
+  
+// Lectura y formateo de archivo:
+// devuelve un vector con actividades validadas
+
+vector<Actividad> leer_actividades(const string &ruta_archivo) {
+  // Vector de actividades
+  vector<Actividad> lista_actividades;
+  // lectura de archivo
+  ifstream archivo(ruta_archivo);
+  string linea;
+
+// leer linea por linea el archivo, parar si ya no quedan.
+  while (getline(archivo, linea)) {
+
+  // Si la linea esta vacia, saltarsela
+  if (trim(linea).empty())
+    continue;
+
+  // De esa linea, hacer un string manejable
+  stringstream ss(linea);
+  string id_str, nombre, tiempo_str, deps_str;
+
+  // Se lee la ID y el nombre pq esos si o si van
+  if (getline(ss, id_str, ':') && getline(ss, nombre, ':')) {
+    Actividad act;
+    act.id = stoi(trim(id_str));
+    act.nombre = trim(nombre);
+
+    // Intenta leer el campo del tiempo
+    if (getline(ss, tiempo_str, ':')) {
+      tiempo_str = trim(tiempo_str);
+
+      if (tiempo_str.empty()) // si es que esta vacio, un poco obvio pero igual
+      {
+        // Si el campo tiempo ta vacio con formato ": :" (ej: "1 : prender_carbon : :")
+        act.tiempo_ms = 100 + (rand() % 4901); // TIENE QUE SER 4901, pues incluye el 4900, tonces seria 100 min y 5000 max
+      } 
+      else {
+        act.tiempo_ms = stol(tiempo_str);
+      }
+      } else {
+        // Si termina despues del nombre (ej: "1 : prender_carbon" o "1 : prender_carbon :")
+        act.tiempo_ms = 100 + (rand() % 4901); // misma logica que arriba
+      }
+
+      // Leemos el resto de la linea para las dependencias (si es que tiene)
+      if (getline(ss, deps_str)) {
+        act.dependencias = parsear_dependencias(deps_str);
+      } else {
+        act.dependencias = {};
+      }
+
+      lista_actividades.push_back(act);
+    }
+  }
+
+  return lista_actividades;
+}
+*/
+
 // Main po, que mas se puede explicar.. recibe un contador de argumentos, y un
 // arreglo con ellos
 int main(int argc, char **args) {
@@ -164,3 +229,49 @@ int main(int argc, char **args) {
   // hasta ahora solo lectura de tareas
   return 0;
 }
+
+/*
+Para manejo de SIGINT, nos faltan las librerias:
+#include <sys/wait.h> // para waitpid
+#include <unistd.h>   // para write y _exit
+
+Ademas, faltaria un tracker global de todos los procesos hijos existentes, para poder matarlos a todos.
+Entonces, si no me equivoco, el flujo seria asi:
+1. Crear un vector global de pids de procesos hijos.
+// vector<pid_t> pids_hijos_activos;
+2. Crear un signal handler para SIGINT, que recorreria el vector y le mande kill a todos los pids hijos.
+
+void manejar_sigint(int sig) {
+  // mensaje si detecta el ctrl+c (seremi)
+  const char msg[] = "\n\nLlego la seremi ctmre corran\n";
+  write(STDOUT_FILENO, msg, sizeof(msg) - 1);
+
+  // enviar señal de cancelación a cada hijo activo
+  for (pid_t pid : pids_hijos_activos) {
+    if (pid > 0) { kill(pid, SIGKILL); }
+  }
+
+  // despues, esperar a que todos cierren para evitar que se formen procesos zombie
+  for (pid_t pid : pids_hijos_activos) {
+    if (pid > 0) {
+      int status;
+      waitpid(pid, &status, 0);
+    }
+  }
+
+  // y despues de todo eso, un _exit para salir del proceso original
+  _exit(sig);
+}
+
+3. En el main, antes de hacer cualquier cosa, registrar el signal handler con:
+signal(SIGINT, manejar_sigint);
+
+El problema con esto, es que habria que separar los codigos del padre y del hijo, tonces faltaria una wea asi:
+if (pid == 0) { exit(0); } // hijo, ejecutar tarea
+else if (pid > 0) { pids_hijos_activos.push_back(pid); } // padre, guardar el pid del hijo en el vector de pids activos
+
+E incluso si tenemos esto, falta el resto del manejo de procesos, como por ejemplo, que pasa si el hijo termina antes de que llegue el SIGINT, 
+entonces habria que eliminarlo del vector de pids activos, y eso se hace con waitpid y WNOHANG, pero eso es otra wea mas compleja.
+
+Lo dejo hasta aca hmno, sigo mañana
+*/
