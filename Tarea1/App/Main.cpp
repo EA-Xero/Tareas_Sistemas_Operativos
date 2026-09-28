@@ -18,6 +18,7 @@ bool verificar_archivo(const string &nombre) {
     return archivo.good();
 }
 
+// Revisa si faltan parametros segun la rubrica, o si estan mal escritos/formateados
 bool verificar_parametros(int argc, char **args, int &limite_out) {
     if (argc < 3) {
         cout << "Uso: ./planificador <archivo.txt> <Limite>\n";
@@ -93,6 +94,7 @@ vector<Actividad> leer_actividades(const string &ruta_archivo) {
     ifstream archivo(ruta_archivo);
     string linea;
 
+    //Leere linea por linea, guarda los resultados en el vector de actividades
     while (getline(archivo, linea)) {
         if (trim(linea).empty())
             continue;
@@ -130,7 +132,7 @@ vector<Actividad> leer_actividades(const string &ruta_archivo) {
     return lista_actividades;
 }
 
-// Vector global para el manejo de hijos y la seal de la seremi
+// Vector global para el manejo de hijos y la senal de la seremi
 vector<pid_t> pids_hijos_activos;
 
 void manejar_sigint(int sig) {
@@ -207,17 +209,14 @@ int main(int argc, char **args) {
                 corriendo_actuales++;
             }
             if (act.estado == 0 || act.estado == 1) {
-                simulacion_activa = true; // Todavia hay pega por hacer
+                simulacion_activa = true; 
             }
         }
 
         // Lanzar nuevas tareas si hay espacio segun el limite K
         for (auto &act : actividades) {
             if (act.estado == 0 && corriendo_actuales < limite_k) {
-                // Verificar si sus dependencias terminaron bien
                 if (dependencias_cumplidas(act, actividades)) {
-                    
-                    // Creamos el pipe para notificaciones si hace falta
                     if (pipe(act.pipe_fd) < 0) {
                         perror("Error al crear pipe");
                         continue;
@@ -228,31 +227,19 @@ int main(int argc, char **args) {
                         perror("Error en fork");
                         break;
                     } else if (pid == 0) {
-                        // Codigo del proceso hijo
-                        // Cerramos el extremo de lectura del pipe en el hijo
+                        signal(SIGINT, SIG_DFL); // Evitar colision con la señal de la seremi en el hijo (el codigo anterior duplicaba el output)
                         close(act.pipe_fd[0]);
-
-                        // Simulamos la ejecucion del tiempo de la tarea
-                        // Convertimos ms a microsegundos con usleep
                         usleep(act.tiempo_ms * 1000);
-
-                        // Simulamos una pequeña probabilidad de fallo aleatorio (ej 5%) para probar la tolerancia a fallos
-                        // O lo dejamos estable segun se requiera. Aqui avisamos exito escribiendo en el pipe.
                         char exito = '1';
                         write(act.pipe_fd[1], &exito, 1);
                         close(act.pipe_fd[1]);
-
                         _exit(0);
                     } else {
-                        // Codigo del proceso padre
                         act.pid = pid;
-                        act.estado = 1; // En ejecucion
+                        act.estado = 1;
                         corriendo_actuales++;
                         pids_hijos_activos.push_back(pid);
-                        
-                        // Cerramos el extremo de escritura en el padre
                         close(act.pipe_fd[1]);
-
                         cout << "[INICIO] Actividad " << act.id << " (" << act.nombre 
                              << ") corriendo con PID " << pid << " [Tiempo: " << act.tiempo_ms << "ms]\n";
                     }
@@ -260,14 +247,15 @@ int main(int argc, char **args) {
             }
         }
 
-        // Revisar si algun hijo termino usando waitpid con WNOHANG para no bloquearnos
+        // Primero revisamos si hay alguno terminado de forma no bloqueante
+        bool algun_hijo_revisado = false;
         for (auto &act : actividades) {
             if (act.estado == 1) {
                 int status;
                 pid_t resultado = waitpid(act.pid, &status, WNOHANG);
 
                 if (resultado > 0) {
-                    // El proceso termino, lo removemos del vector global de activos
+                    algun_hijo_revisado = true;
                     auto it_p = find(pids_hijos_activos.begin(), pids_hijos_activos.end(), act.pid);
                     if (it_p != pids_hijos_activos.end()) {
                         pids_hijos_activos.erase(it_p);
@@ -278,24 +266,55 @@ int main(int argc, char **args) {
                     close(act.pipe_fd[0]);
 
                     if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
-                        act.estado = 2; // Finalizada con exito
+                        act.estado = 2; 
                         cout << "[TERMINADO] Actividad " << act.id << " (" << act.nombre << ") completada con exito.\n";
                     } else {
-                        act.estado = 3; // Fallida
+                        act.estado = 3; 
                         cout << "[ERROR] Actividad " << act.id << " (" << act.nombre << ") fallo durante su ejecucion.\n";
                         abortar_dependientes(act.id, actividades);
                     }
-                } else if (resultado < 0) {
-                    // Error en waitpid o proceso ya no existe
-                    act.estado = 3;
                 }
             }
         }
+	/*
+	 *Hay un problema que se arreglo ahora del codigo anterior, consumia mucha cpu por que el padre constantemente tenia que retornar al bucle y revisar si los hijos habian terminado,
+	 con una prueba de muchas actividades casi se me que la pc :/, bueno tampoco asi pero ya entiendes.
 
-        // Pequeña pausa para no saturar la CPU en el bucle de coordinacion
-        usleep(10000); // 10 ms
+	 Ademas comparando con la rubrica, se menciona que no se puede hacer busy-waiting (el usleep() ), por lo que me puse a eliminarlos y cambiarlos
+	 * */
+
+        // SI YA ESTAMOS AL LIMITE DE CONCURRENCIA (K) y ningun hijo termino en este ciclo,
+        // en vez de quemar CPU haciendo bucle, esperamos pasivamente a que CUALQUIER hijo muera.
+        if (!algun_hijo_revisado && corriendo_actuales >= limite_k && simulacion_activa) {
+            int status;
+            pid_t pid_terminado = wait(&status); // Bloqueo eficiente del SO (Cero Busy-Waiting)
+            if (pid_terminado > 0) {
+                // Buscamos cual de los activos corresponde a este PID para procesarlo en la siguiente iteracion
+                for (auto &act : actividades) {
+                    if (act.estado == 1 && act.pid == pid_terminado) {
+                        auto it_p = find(pids_hijos_activos.begin(), pids_hijos_activos.end(), pid_terminado);
+                        if (it_p != pids_hijos_activos.end()) {
+                            pids_hijos_activos.erase(it_p);
+                        }
+
+                        char buf = '0';
+                        read(act.pipe_fd[0], &buf, 1);
+                        close(act.pipe_fd[0]);
+
+                        if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
+                            act.estado = 2;
+                            cout << "[TERMINADO] Actividad " << act.id << " (" << act.nombre << ") completada con exito.\n";
+                        } else {
+                            act.estado = 3;
+                            cout << "[ERROR] Actividad " << act.id << " (" << act.nombre << ") fallo durante su ejecucion.\n";
+                            abortar_dependientes(act.id, actividades);
+                        }
+                    }
+                }
+            }
+        }
     }
-
-    cout << "\nSimulacion del planificador finalizada correctamente.\n";
+    // ademas, eliminamos los casos de prueba anteriores (por ejemplo antes habia un 5% de posibilidad de que una tarea fallara solo para probar la cancelacion de tareas en cascada
+    cout << "TIKI TIKI TI!";
     return 0;
 }
