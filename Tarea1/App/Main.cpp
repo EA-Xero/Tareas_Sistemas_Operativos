@@ -10,7 +10,7 @@
 #include <unistd.h>   // Para write, fork, pipe, etc.
 #include <algorithm>  // Para buscar en vectores
 
-using namespace std;
+using namespace std; 
 
 // Verificar que el archivo existe
 bool verificar_archivo(const string &nombre) {
@@ -42,16 +42,22 @@ bool verificar_parametros(int argc, char **args, int &limite_out) {
 
 // Estructura basica de una Actividad
 struct Actividad {
-    int id;
+    // int id;
+    string id; // debe ser ALFANUMERICO, por lo que es string
     string nombre;
     long tiempo_ms;
-    vector<int> dependencias;
+    vector<string> dependencias;
     
     // Estados internos para la simulacion del DAG
     // 0: Pendiente, 1: Ejecutandose, 2: Finalizada, 3: Fallida
     int estado = 0; 
     pid_t pid = -1;
-    int pipe_fd[2] = {-1, -1};
+    // int pipe_fd[2] = {-1, -1};
+    int pipe_padre_a_hijo[2] = {-1, -1}; // Padre manda insumos al hijo por una pipe
+    int pipe_hijo_a_padre[2] = {-1, -1}; // Hijo manda notificacion que termino y el insumo generado al padre por la otra pipe
+
+    // Ademas, hay que guardar el insumo que genera la tarea cuando termina
+    string insumo_generado = ""; 
 };
 
 // Funcion auxiliar para limpiar espacios en blanco
@@ -64,8 +70,8 @@ string trim(const string &str) {
 }
 
 // Parsear dependencias sin importar corchetes o dos puntos
-vector<int> parsear_dependencias(string texto_dep) {
-    vector<int> deps;
+vector<string> parsear_dependencias(string texto_dep) {
+    vector<string> deps;
     texto_dep = trim(texto_dep);
 
     if (texto_dep.empty())
@@ -82,7 +88,8 @@ vector<int> parsear_dependencias(string texto_dep) {
     while (getline(ss, item, ',')) {
         item = trim(item);
         if (!item.empty()) {
-            deps.push_back(stoi(item));
+            // deps.push_back(stoi(item));
+            deps.push_back(item);
         }
     }
     return deps;
@@ -104,7 +111,8 @@ vector<Actividad> leer_actividades(const string &ruta_archivo) {
 
         if (getline(ss, id_str, ':') && getline(ss, nombre, ':')) {
             Actividad act;
-            act.id = stoi(trim(id_str));
+            // act.id = stoi(trim(id_str));
+            act.id = trim(id_str); // ALFANUMERICO
             act.nombre = trim(nombre);
 
             if (getline(ss, tiempo_str, ':')) {
@@ -155,8 +163,9 @@ void manejar_sigint(int sig) {
 
 // Funcion para verificar si todas las dependencias de una actividad ya terminaron con exito
 bool dependencias_cumplidas(const Actividad &act, const vector<Actividad> &todas) {
-    for (int dep_id : act.dependencias) {
-        auto it = find_if(todas.begin(), todas.end(), [dep_id](const Actividad &a) {
+    // for (int dep_id : act.dependencias) {
+    for (const string &dep_id : act.dependencias) { // las ids de dependencia no cambian, entonces CONST
+        auto it = find_if(todas.begin(), todas.end(), [&dep_id](const Actividad &a) {
             return a.id == dep_id;
         });
         // Si la dependencia no existe o no esta finalizada correctamente (estado 2), no se puede ejecutar
@@ -168,7 +177,8 @@ bool dependencias_cumplidas(const Actividad &act, const vector<Actividad> &todas
 }
 
 // Funcion recursiva para abortar en cascada a los procesos que dependen de uno fallido
-void abortar_dependientes(int id_fallido, vector<Actividad> &actividades) {
+// void abortar_dependientes(int id_fallido, vector<Actividad> &actividades) {
+void abortar_dependientes(const string &id_fallido, vector<Actividad> &actividades) {
     for (auto &act : actividades) {
         // Si esta actividad depende del id_fallido y aun no esta muerta/finalizada
         auto it = find(act.dependencias.begin(), act.dependencias.end(), id_fallido);
@@ -181,6 +191,36 @@ void abortar_dependientes(int id_fallido, vector<Actividad> &actividades) {
             abortar_dependientes(act.id, actividades);
         }
     }
+}
+
+/* La comunicacion entre procesos necesitaba las pipes duales y metodos para enviar y recibir, asi que los agrego */
+bool enviar_mensaje(int fd, const string &mensaje) {
+    string texto = mensaje + "\n";
+    size_t enviados = 0;
+
+    while (enviados < texto.size()) {
+        ssize_t n = write(fd, texto.c_str() + enviados, texto.size() - enviados);
+        if (n <= 0) { return false; }
+        enviados += n;
+    }
+
+    return true;
+}
+
+bool recibir_mensaje(int fd, string &mensaje) {
+    mensaje.clear();
+    char c;
+
+    while (true) {
+        ssize_t n = read(fd, &c, 1);
+
+        if (n <= 0) { return false; }
+        if (c == '\n') { break; }
+
+        mensaje += c;
+    }
+
+    return true;
 }
 
 int main(int argc, char **args) {
@@ -205,20 +245,28 @@ int main(int argc, char **args) {
 
         // Contar cuantos estan corriendo actualmente y revisar estados
         for (const auto &act : actividades) {
-            if (act.estado == 1) {
-                corriendo_actuales++;
-            }
-            if (act.estado == 0 || act.estado == 1) {
-                simulacion_activa = true; 
-            }
+           /*  if (act.estado == 1) { corriendo_actuales++; }
+            if (act.estado == 0 || act.estado == 1) { simulacion_activa = true;  }*/
+            if (act.estado == 1) corriendo_actuales++;
+            if (act.estado == 0 || act.estado == 1) simulacion_activa = true; 
         }
 
         // Lanzar nuevas tareas si hay espacio segun el limite K
         for (auto &act : actividades) {
-            if (act.estado == 0 && corriendo_actuales < limite_k) {
+            if (act.estado == 0 && corriendo_actuales < limite_k) { 
+                // medianamente seguro que < limite_k ta creando busy waiting
                 if (dependencias_cumplidas(act, actividades)) {
-                    if (pipe(act.pipe_fd) < 0) {
-                        perror("Error al crear pipe");
+                    // if (pipe(act.pipe_padre_a_hijo) == -1 || pipe(act.pipe_hijo_a_padre) == -1){
+                    if (pipe(act.pipe_padre_a_hijo) == -1){
+                        perror("Error al crear pipe direccion padre->hijo");
+                        continue;
+                    }
+                    if (pipe(act.pipe_hijo_a_padre) == -1) {
+                        perror("Error al crear pipe direccion hijo->padre");
+
+                        close(act.pipe_padre_a_hijo[0]); 
+                        close(act.pipe_padre_a_hijo[1]);
+
                         continue;
                     }
 
@@ -228,18 +276,21 @@ int main(int argc, char **args) {
                         break;
                     } else if (pid == 0) {
                         signal(SIGINT, SIG_DFL); // Evitar colision con la señal de la seremi en el hijo (el codigo anterior duplicaba el output)
-                        close(act.pipe_fd[0]);
+                        close(act.pipe_padre_a_hijo[1]); // El padre LEE al hijo
+                        close(act.pipe_hijo_a_padre[0]); // El hijo ESCRIBE al padre 
                         usleep(act.tiempo_ms * 1000);
-                        char exito = '1';
-                        write(act.pipe_fd[1], &exito, 1);
-                        close(act.pipe_fd[1]);
+                        char exito = '1'; 
+                        write(act.pipe_hijo_a_padre[1], &exito, 1);
+                        close(act.pipe_padre_a_hijo[0]);
+                        close(act.pipe_hijo_a_padre[1]);
                         _exit(0);
                     } else {
                         act.pid = pid;
                         act.estado = 1;
                         corriendo_actuales++;
                         pids_hijos_activos.push_back(pid);
-                        close(act.pipe_fd[1]);
+                        close(act.pipe_padre_a_hijo[0]); // El padre ESCRIBE al hijo 
+                        close(act.pipe_hijo_a_padre[1]); // El padre LEE del hijo 
                         cout << "[INICIO] Actividad " << act.id << " (" << act.nombre 
                              << ") corriendo con PID " << pid << " [Tiempo: " << act.tiempo_ms << "ms]\n";
                     }
@@ -262,8 +313,8 @@ int main(int argc, char **args) {
                     }
 
                     char buf = '0';
-                    read(act.pipe_fd[0], &buf, 1);
-                    close(act.pipe_fd[0]);
+                    read(act.pipe_hijo_a_padre[0], &buf, 1);
+                    close(act.pipe_hijo_a_padre[0]); // Cerramos el extremo de lectura al terminar
 
                     if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
                         act.estado = 2; 
@@ -298,8 +349,8 @@ int main(int argc, char **args) {
                         }
 
                         char buf = '0';
-                        read(act.pipe_fd[0], &buf, 1);
-                        close(act.pipe_fd[0]);
+                        read(act.pipe_hijo_a_padre[0], &buf, 1);
+                        close(act.pipe_hijo_a_padre[0]); // Cerramos el extremo de lectura al terminar
 
                         if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
                             act.estado = 2;
@@ -318,3 +369,48 @@ int main(int argc, char **args) {
     cout << "TIKI TIKI TI!";
     return 0;
 }
+
+/*
+Segun lo que entendi del codigo (que me lei toda la wea mil y una veces pa intentar reentenderlo despues de todo lo que ya llevamos),
+nos falta todavia la comunicacion entre procesos en direccion padre->hijo (solo hay en direccion hijo->padre), que se pide en el punto 3.2:
+"Cuando una actividad finaliza su simulación, debe propagar un mensaje de texto acotado hacia 
+su(s) actividad(es) dependiente(s) notificando su insumo." 
+
+Para implementar esto, habria que cambiar la logica que siguen las pipes entre procesos, tal que la conexion sea para ambos lados 
+(osea, 2 pipes por proceso, una en direccion hijo->padre y otra padre->hijo). Ahora, yo juraba haber escuchado que las pipes eran sin nombre,
+por lo que seria crear dos pipes por actividad: una de notificación (la de hijo->padre) y una de insumo (la de padre->hijo).
+EL PROBLEMA: hacer esto requeriria cambiar la logica del codigo, porque habria que cambiar la estructura de la creacion de pipes y
+delegarla a actividad. 
+Habria que modificar actividad y agregarle algo como:
+"
+// Pipes para la comunicacion
+    int pipe_padre_a_hijo[2] = {-1, -1}; // Padre manda insumos al hijo por una pipe
+    int pipe_hijo_a_padre[2] = {-1, -1}; // Hijo manda notificacion que termino y el insumo generado al padre por la otra pipe
+
+    // Ademas, hay que guardar el insumo que genera la tarea cuando termina
+    string insumo_generado = ""; 
+    // asumo que insumo es como el resultado de la tarea, algo tipo "OK:prender_carbon" pa que los que dependan de eso puedan usarlo
+"
+
+En caso de que vayamos con eso, habria que cambiar la linea 220 pa hacerlo crear las dos pipes: 
+"if (pipe(act.pipe_padre_a_hijo) < 0 || pipe(act.pipe_hijo_a_padre) < 0) {
+    perror("Error creando pipes");
+    continue;
+}"
+
+El flujo es mas o menos algo de tipo:
+1.- Cuando la actividad X (ej: prender_carbon) termina su tiempo de simulacion (usleep), 
+el proceso hijo escribe su nombre o un mensaje por su pipe de salida (write(pipe_hijo_a_padre, "prender_carbon", ...)).
+2.-: El padre lee el mensaje al detectar que el hijo terminó (read(pipe_hijo_a_padre)) y lo guarda en su estructura 
+como el insumo disponible de la actividad X (por eso ese string vacio en la nueva estructura de Actividad).
+3.- Cuando la Actividad Y (ej: asar_longaniza) ya tiene todas sus dependencias completadas (el carbon y la carne) y se inicia su proceso mediante 
+fork(), el padre escribe a traves del canal de entrada del nuevo hijo (write(pipe_padre_a_hijo, "prender_carbon, comprar_carne", ...)) 
+los insumos acumulados de sus predecesores. 
+4.- El proceso hijo realiza un read(pipe_padre_a_hijo) al arrancar, recibe la confirmacion de que tiene las dependencias necesarias 
+y procede a ejecutar su propia simulacion.
+
+
+Y algo DEMASIADO importante que nos faltaba: ID es alfanumerico, no solo integer, asi que el stoi() esta mal.
+Ahi corregi hartas cosas... llevo dias mirando este codigo de mierda para ver que mas ponerle. Sigo mas rato.
+
+*/
