@@ -1,6 +1,13 @@
-1 : prender_carbon : 500 :
-2 : comprar_carne : 1200 :
-3 : comprar_pan : 300 :
-4 : asar_longaniza : 800 : 1, 2
-5 : armar_choripan : 250 : 3, 4
-6 : servir_mesa : 100 : 5
+A1 : prender_parrilla : 800 :
+A2 : comprar_carne : 600 :
+A3 : comprar_pan : 400 :
+A4 : preparar_bebidas : :
+A5 : poner_mesa : 700 :
+A6 : cocinar_carne : 900 : A1, A2
+A7 : cortar_pan : 300 : A3
+A8 : armar_completo : 500 : A6, A7
+A9 : servir_bebidas : 350 : A4
+A10 : servir_mesa : 300 : A8, A9, A5
+A11 : poner_musica : 500 :
+A12 : bailar : 400 : A11
+A13 : terminar_fiesta : 300 : A10, A12
