@@ -184,8 +184,14 @@ void abortar_dependientes(const string &id_fallido, vector<Actividad> &actividad
         auto it = find(act.dependencias.begin(), act.dependencias.end(), id_fallido);
         if (it != act.dependencias.end() && act.estado != 3 && act.estado != 2) {
             act.estado = 3; // Marcada como fallida por propagacion
-            if (act.pid > 0) {
-                kill(act.pid, SIGKILL);
+            if (act.pid > 0) { kill(act.pid, SIGKILL); }
+            if (act.pipe_hijo_a_padre[0] != -1) { // en caso que pipes no se haya cerrado bien
+                close(act.pipe_hijo_a_padre[0]);
+                act.pipe_hijo_a_padre[0] = -1;
+            }
+            if (act.pipe_padre_a_hijo[1] != -1) {
+                close(act.pipe_padre_a_hijo[1]);
+                act.pipe_padre_a_hijo[1] = -1;
             }
             cout << "[FALLO EN CASCADA] Actividad " << act.id << " (" << act.nombre << ") abortada por fallo previo.\n";
             abortar_dependientes(act.id, actividades);
@@ -193,7 +199,8 @@ void abortar_dependientes(const string &id_fallido, vector<Actividad> &actividad
     }
 }
 
-/* La comunicacion entre procesos necesitaba las pipes duales y metodos para enviar y recibir, asi que los agrego */
+/* La comunicacion entre procesos necesitaba las pipes duales y metodos para enviar y recibir, 
+asi que los agrego, y agrego la funcion que recopile las dependencias */
 bool enviar_mensaje(int fd, const string &mensaje) {
     string texto = mensaje + "\n";
     size_t enviados = 0;
@@ -221,6 +228,23 @@ bool recibir_mensaje(int fd, string &mensaje) {
     }
 
     return true;
+}
+
+// recopila los insumos generados por las actividades de las que depende la actividad actual
+string obtener_insumos_dependencias(const Actividad &act, const vector<Actividad> &todas) {
+    string insumos_acumulados = "";
+    for (const string &dep_id : act.dependencias) {
+        auto it = find_if(todas.begin(), todas.end(), [&dep_id](const Actividad &a) {
+            return a.id == dep_id;
+        });
+        if (it != todas.end()) {
+            if (!insumos_acumulados.empty()) insumos_acumulados += " | ";
+            insumos_acumulados += "[" + it->id + ": " + it->insumo_generado + "]";
+        }
+    }
+    // podria hacer el if y 2 returns, pero como aprendimos de funciones ternarias en EDA, aprovecho de usarlas ahora
+    // dudo que haya otra instancia donde poder usarlas, asi que les doy una chance de ser utiles 
+    return insumos_acumulados.empty() ? "Sin dependencias" : insumos_acumulados;
 }
 
 int main(int argc, char **args) {
@@ -254,34 +278,42 @@ int main(int argc, char **args) {
         // Lanzar nuevas tareas si hay espacio segun el limite K
         for (auto &act : actividades) {
             if (act.estado == 0 && corriendo_actuales < limite_k) { 
-                // medianamente seguro que < limite_k ta creando busy waiting
                 if (dependencias_cumplidas(act, actividades)) {
-                    // if (pipe(act.pipe_padre_a_hijo) == -1 || pipe(act.pipe_hijo_a_padre) == -1){
                     if (pipe(act.pipe_padre_a_hijo) == -1){
                         perror("Error al crear pipe direccion padre->hijo");
                         continue;
                     }
                     if (pipe(act.pipe_hijo_a_padre) == -1) {
                         perror("Error al crear pipe direccion hijo->padre");
-
                         close(act.pipe_padre_a_hijo[0]); 
                         close(act.pipe_padre_a_hijo[1]);
-
                         continue;
                     }
 
                     pid_t pid = fork();
                     if (pid < 0) {
-                        perror("Error en fork");
+                        perror("Error en fork"); // cierro pipes en caso de error
+                        close(act.pipe_padre_a_hijo[0]); 
+                        close(act.pipe_padre_a_hijo[1]);
+                        close(act.pipe_hijo_a_padre[0]); 
+                        close(act.pipe_hijo_a_padre[1]);
                         break;
                     } else if (pid == 0) {
                         signal(SIGINT, SIG_DFL); // Evitar colision con la señal de la seremi en el hijo (el codigo anterior duplicaba el output)
                         close(act.pipe_padre_a_hijo[1]); // El padre LEE al hijo
                         close(act.pipe_hijo_a_padre[0]); // El hijo ESCRIBE al padre 
-                        usleep(act.tiempo_ms * 1000);
-                        char exito = '1'; 
-                        write(act.pipe_hijo_a_padre[1], &exito, 1);
+                        string insumos_recibidos;
+                        if (!recibir_mensaje(act.pipe_padre_a_hijo[0], insumos_recibidos)) {
+                            close(act.pipe_padre_a_hijo[0]);
+                            _exit(1);
+                        }
                         close(act.pipe_padre_a_hijo[0]);
+                        usleep(act.tiempo_ms * 1000);
+                        string insumo_resultante = "OK:" + act.nombre;
+                        if (!enviar_mensaje(act.pipe_hijo_a_padre[1], insumo_resultante)) {
+                            close(act.pipe_hijo_a_padre[1]);
+                            _exit(1);
+                        }
                         close(act.pipe_hijo_a_padre[1]);
                         _exit(0);
                     } else {
@@ -291,126 +323,74 @@ int main(int argc, char **args) {
                         pids_hijos_activos.push_back(pid);
                         close(act.pipe_padre_a_hijo[0]); // El padre ESCRIBE al hijo 
                         close(act.pipe_hijo_a_padre[1]); // El padre LEE del hijo 
+                        string insumos = obtener_insumos_dependencias(act, actividades);
+                        // enviar_mensaje(act.pipe_padre_a_hijo[1], insumos); ahora tiene manejo error
+                        if (!enviar_mensaje(act.pipe_padre_a_hijo[1], insumos)) {
+                            cout << "[ERROR] No se pudieron enviar los insumos a la actividad " << act.id << ".\n";
+                            close(act.pipe_padre_a_hijo[1]);
+                            kill(pid, SIGKILL);
+                            int status;
+                            waitpid(pid, &status, 0);
+                            pids_hijos_activos.pop_back();
+                            act.estado = 3;
+                            abortar_dependientes(act.id, actividades);
+                            continue;
+                        }
+                        close(act.pipe_padre_a_hijo[1]); // Cerrar tras enviar para evitar bloqueos
                         cout << "[INICIO] Actividad " << act.id << " (" << act.nombre 
-                             << ") corriendo con PID " << pid << " [Tiempo: " << act.tiempo_ms << "ms]\n";
+                            << ") corriendo con PID " << pid << " [Tiempo: " << act.tiempo_ms << "ms]\n";
                     }
                 }
             }
         }
+        /* Perdi DIAS en esta wea. Esto funciona. Dejare de cuestionarlo. */
 
-        // Primero revisamos si hay alguno terminado de forma no bloqueante
-        bool algun_hijo_revisado = false;
-        for (auto &act : actividades) {
-            if (act.estado == 1) {
-                int status;
-                pid_t resultado = waitpid(act.pid, &status, WNOHANG);
+    
+   if (corriendo_actuales == 0 && simulacion_activa) { // en caso que no haya nada, porque abajo es solo > 0.
+        cout << "[ERROR] No hay actividades que puedan continuar.\nRevisar las dependencias del plan.\n";
+        break;
+    }
+   if (corriendo_actuales > 0) {
+        int status;
+        pid_t pid_terminado = -1;
 
-                if (resultado > 0) {
-                    algun_hijo_revisado = true;
-                    auto it_p = find(pids_hijos_activos.begin(), pids_hijos_activos.end(), act.pid);
-                    if (it_p != pids_hijos_activos.end()) {
-                        pids_hijos_activos.erase(it_p);
+        // El ciclo ya intenta ejecutar todo lo que puede correctamente, asi que conviene mas solo esperar a que termine algo.
+        pid_terminado = waitpid(-1, &status, 0);
+        if (pid_terminado > 0) {
+            // quitamos el PID finalizado de la lista global de activos
+            auto it_p = find(pids_hijos_activos.begin(), pids_hijos_activos.end(), pid_terminado);
+            if (it_p != pids_hijos_activos.end()) {
+                pids_hijos_activos.erase(it_p);
+            }
+
+            // buscar la actividad que termino y guardamos su insumo
+            for (auto &act : actividades) {
+                if (act.estado == 1 && act.pid == pid_terminado) {
+                    string msj_insumo = "";
+                    bool leido = recibir_mensaje(act.pipe_hijo_a_padre[0], msj_insumo);
+                    if (act.pipe_hijo_a_padre[0] != -1) { // tengo traumas con las pipes a este punto
+                        close(act.pipe_hijo_a_padre[0]);
+                        act.pipe_hijo_a_padre[0] = -1;
                     }
 
-                    char buf = '0';
-                    read(act.pipe_hijo_a_padre[0], &buf, 1);
-                    close(act.pipe_hijo_a_padre[0]); // Cerramos el extremo de lectura al terminar
-
-                    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
-                        act.estado = 2; 
-                        cout << "[TERMINADO] Actividad " << act.id << " (" << act.nombre << ") completada con exito.\n";
+                    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && leido) {
+                        act.estado = 2;
+                        act.insumo_generado = msj_insumo; // Guardar el insumo en el objeto de la tarea
+                        cout << "[TERMINADO] Actividad " << act.id << " (" << act.nombre 
+                            << ") completada. Insumo: " << act.insumo_generado << "\n";
                     } else {
-                        act.estado = 3; 
-                        cout << "[ERROR] Actividad " << act.id << " (" << act.nombre << ") fallo durante su ejecucion.\n";
+                        act.estado = 3;
+                        cout << "[ERROR] Actividad " << act.id << " (" << act.nombre << ") fallo.\n";
                         abortar_dependientes(act.id, actividades);
                     }
-                }
-            }
-        }
-	/*
-	 *Hay un problema que se arreglo ahora del codigo anterior, consumia mucha cpu por que el padre constantemente tenia que retornar al bucle y revisar si los hijos habian terminado,
-	 con una prueba de muchas actividades casi se me que la pc :/, bueno tampoco asi pero ya entiendes.
-
-	 Ademas comparando con la rubrica, se menciona que no se puede hacer busy-waiting (el usleep() ), por lo que me puse a eliminarlos y cambiarlos
-	 * */
-
-        // SI YA ESTAMOS AL LIMITE DE CONCURRENCIA (K) y ningun hijo termino en este ciclo,
-        // en vez de quemar CPU haciendo bucle, esperamos pasivamente a que CUALQUIER hijo muera.
-        if (!algun_hijo_revisado && corriendo_actuales >= limite_k && simulacion_activa) {
-            int status;
-            pid_t pid_terminado = wait(&status); // Bloqueo eficiente del SO (Cero Busy-Waiting)
-            if (pid_terminado > 0) {
-                // Buscamos cual de los activos corresponde a este PID para procesarlo en la siguiente iteracion
-                for (auto &act : actividades) {
-                    if (act.estado == 1 && act.pid == pid_terminado) {
-                        auto it_p = find(pids_hijos_activos.begin(), pids_hijos_activos.end(), pid_terminado);
-                        if (it_p != pids_hijos_activos.end()) {
-                            pids_hijos_activos.erase(it_p);
-                        }
-
-                        char buf = '0';
-                        read(act.pipe_hijo_a_padre[0], &buf, 1);
-                        close(act.pipe_hijo_a_padre[0]); // Cerramos el extremo de lectura al terminar
-
-                        if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && buf == '1') {
-                            act.estado = 2;
-                            cout << "[TERMINADO] Actividad " << act.id << " (" << act.nombre << ") completada con exito.\n";
-                        } else {
-                            act.estado = 3;
-                            cout << "[ERROR] Actividad " << act.id << " (" << act.nombre << ") fallo durante su ejecucion.\n";
-                            abortar_dependientes(act.id, actividades);
-                        }
-                    }
+                    break;
                 }
             }
         }
     }
+}
     // ademas, eliminamos los casos de prueba anteriores (por ejemplo antes habia un 5% de posibilidad de que una tarea fallara solo para probar la cancelacion de tareas en cascada
     cout << "TIKI TIKI TI!";
     return 0;
+    // Odio Sistemas operativos. Odio programar. Pero ahora funciona. Yippee!!!!!!!!!!!!!!!!!!!!!!!!
 }
-
-/*
-Segun lo que entendi del codigo (que me lei toda la wea mil y una veces pa intentar reentenderlo despues de todo lo que ya llevamos),
-nos falta todavia la comunicacion entre procesos en direccion padre->hijo (solo hay en direccion hijo->padre), que se pide en el punto 3.2:
-"Cuando una actividad finaliza su simulación, debe propagar un mensaje de texto acotado hacia 
-su(s) actividad(es) dependiente(s) notificando su insumo." 
-
-Para implementar esto, habria que cambiar la logica que siguen las pipes entre procesos, tal que la conexion sea para ambos lados 
-(osea, 2 pipes por proceso, una en direccion hijo->padre y otra padre->hijo). Ahora, yo juraba haber escuchado que las pipes eran sin nombre,
-por lo que seria crear dos pipes por actividad: una de notificación (la de hijo->padre) y una de insumo (la de padre->hijo).
-EL PROBLEMA: hacer esto requeriria cambiar la logica del codigo, porque habria que cambiar la estructura de la creacion de pipes y
-delegarla a actividad. 
-Habria que modificar actividad y agregarle algo como:
-"
-// Pipes para la comunicacion
-    int pipe_padre_a_hijo[2] = {-1, -1}; // Padre manda insumos al hijo por una pipe
-    int pipe_hijo_a_padre[2] = {-1, -1}; // Hijo manda notificacion que termino y el insumo generado al padre por la otra pipe
-
-    // Ademas, hay que guardar el insumo que genera la tarea cuando termina
-    string insumo_generado = ""; 
-    // asumo que insumo es como el resultado de la tarea, algo tipo "OK:prender_carbon" pa que los que dependan de eso puedan usarlo
-"
-
-En caso de que vayamos con eso, habria que cambiar la linea 220 pa hacerlo crear las dos pipes: 
-"if (pipe(act.pipe_padre_a_hijo) < 0 || pipe(act.pipe_hijo_a_padre) < 0) {
-    perror("Error creando pipes");
-    continue;
-}"
-
-El flujo es mas o menos algo de tipo:
-1.- Cuando la actividad X (ej: prender_carbon) termina su tiempo de simulacion (usleep), 
-el proceso hijo escribe su nombre o un mensaje por su pipe de salida (write(pipe_hijo_a_padre, "prender_carbon", ...)).
-2.-: El padre lee el mensaje al detectar que el hijo terminó (read(pipe_hijo_a_padre)) y lo guarda en su estructura 
-como el insumo disponible de la actividad X (por eso ese string vacio en la nueva estructura de Actividad).
-3.- Cuando la Actividad Y (ej: asar_longaniza) ya tiene todas sus dependencias completadas (el carbon y la carne) y se inicia su proceso mediante 
-fork(), el padre escribe a traves del canal de entrada del nuevo hijo (write(pipe_padre_a_hijo, "prender_carbon, comprar_carne", ...)) 
-los insumos acumulados de sus predecesores. 
-4.- El proceso hijo realiza un read(pipe_padre_a_hijo) al arrancar, recibe la confirmacion de que tiene las dependencias necesarias 
-y procede a ejecutar su propia simulacion.
-
-
-Y algo DEMASIADO importante que nos faltaba: ID es alfanumerico, no solo integer, asi que el stoi() esta mal.
-Ahi corregi hartas cosas... llevo dias mirando este codigo de mierda para ver que mas ponerle. Sigo mas rato.
-
-*/
