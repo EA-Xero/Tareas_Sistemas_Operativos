@@ -1,0 +1,5 @@
+Plan de Desarrollo
+ - Fase 1: Estructuras Base y Tablero. Representación en memoria de la cuadrícula de 5x5 acoplada al trono. Creación del parser para leer el archivo opcional config.txt (tiempos de retardo, disposición inicial y semilla aleatoria)
+ - Fase 2: Hilos y Sincronización. Creación de los procesos/hilos para el Puma y los 12 Perros con retardos aleatorios entre 50 y 300 ms. Implementación de primitivas POSIX (mutex, variables de condición o semáforos) para evitar condiciones de carrera al ocupar casillas.
+ - Fase 3: Juez de Mesa y Servidor Matchmaker. El hilo central que empareja N jugadores sin exceder M mesas. El Juez validará los movimientos, imprimirá el log visual y detectará las condiciones de victoria (6 perros capturados o el Puma acorralado)
+ - Fase 4: Resiliencia. Captura de la señal SIGINT (Ctrl+C) e interrupciones para cerrar todo de forma ordenada, asegurando cero fugas de memoria (memory leaks) y liberando los recursos del sistema.
