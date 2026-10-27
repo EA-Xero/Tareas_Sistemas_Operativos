@@ -1,0 +1,6 @@
+# Dificil
+seed = 999
+delay_min = 50
+delay_max = 150
+pos_puma = 15
+pos_perros = 16 17 18 19 20 21 22 23 24 25 26 27

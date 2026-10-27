@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 
+#include "Configuracion.hpp"
+
 // Estados posibles de cada posición en el tablero
 enum class EstadoCasilla {
     VACIO,
@@ -32,7 +34,7 @@ public:
 
     // Inicialización del grafo (3 casillas de trono + 25 de la grilla 5x5)
     void inicializarGrafo();
-    void colocarPiezasIniciales();
+    void colocarPiezasIniciales(const ConfigJuego& config = ConfigJuego());
 
     // Métodos para inspección y depuración
     void imprimirTableroTextual() const;

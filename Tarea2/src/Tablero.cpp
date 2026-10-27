@@ -1,4 +1,5 @@
 #include "Tablero.hpp"
+#include <set>
 
 Tablero::Tablero() {
     inicializarGrafo();
@@ -57,16 +58,61 @@ void Tablero::inicializarGrafo() {
     }
 }
 
-void Tablero::colocarPiezasIniciales() {
-    // Disposición básica inicial estándar:
-    // Ponemos al Puma en el vértice del trono por defecto [0].
-    casillas[0].estado = EstadoCasilla::PUMA;
+void Tablero::colocarPiezasIniciales(const ConfigJuego& config) {
+    // Ahora se realizan los cambios segun el archivo de configuracion del juego, quitamos las posiciones fijas si se puede
+    // En caso de que no exista el archivo, se usan las posiciones por defecto
 
-    // Los 12 perros comienzan ocupando las filas inferiores (para simplicidad).
-    // Asignamos casillas de la 16 a la 27
-    for (int i = 16; i <= 27; ++i) {
-        casillas[i].estado = EstadoCasilla::PERRO;
+    // 1. Limpiamos estados
+    for (auto& c : casillas) {
+        c.estado = EstadoCasilla::VACIO;
     }
+
+    // 2. Validar y ubicar la posición del Puma
+    int posPumaActual = config.posPuma;
+    if (posPumaActual < 0 || posPumaActual >= static_cast<int>(casillas.size())) {
+        std::cout << "[ADVERTENCIA] Posicion de Puma invalida (" << posPumaActual 
+                  << "). Colocando en posicion por defecto (0 - Vertice Trono).\n";
+        posPumaActual = 0;
+    }
+    casillas[posPumaActual].estado = EstadoCasilla::PUMA;
+
+    // 3. Ubicar los 12 Perros evitando colisiones y duplicados
+    std::set<int> posicionesOcupadas;
+    posicionesOcupadas.insert(posPumaActual); // El Puma ya ocupa su lugar
+
+    int perrosColocados = 0;
+
+    // Colocar primero las posiciones de los perros especificadas en la configuracion
+    for (int pos : config.posPerros) {
+        if (perrosColocados >= 12) break; // Maximo 12 perros
+
+        if (pos >= 0 && pos < static_cast<int>(casillas.size())) {
+            if (posicionesOcupadas.find(pos) == posicionesOcupadas.end()) {
+                casillas[pos].estado = EstadoCasilla::PERRO;
+                posicionesOcupadas.insert(pos);
+                perrosColocados++;
+            } else {
+                std::cout << "[ADVERTENCIA] Casilla " << pos << " ocupada. Ignorando perro duplicado.\n";
+            }
+        } else {
+            std::cout << "[ADVERTENCIA] Posicion de Perro fuera de rango: " << pos << "\n";
+        }
+    }
+
+    // Si faltan perros para completar los 12, los ubicamos desde el fondo del tablero hacia arriba
+    if (perrosColocados < 12) {
+        std::cout << "[INFO] Autocompletando " << (12 - perrosColocados) << " perros restantes...\n";
+        for (int id = 27; id >= 0 && perrosColocados < 12; --id) {
+            if (posicionesOcupadas.find(id) == posicionesOcupadas.end()) {
+                casillas[id].estado = EstadoCasilla::PERRO;
+                posicionesOcupadas.insert(id);
+                perrosColocados++;
+            }
+        }
+    }
+
+    std::cout << "[TABLERO] Disposicion inicial lista. Puma en casilla " << posPumaActual 
+              << " y " << perrosColocados << " perros posicionados.\n";
 }
 
 // Getter para obtener el estado de una casilla específica, sabe si esta vacia, ocupada por un perro o por un puma

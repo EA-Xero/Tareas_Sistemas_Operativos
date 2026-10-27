@@ -1,0 +1,6 @@
+# Normal
+seed = 12345
+delay_min = 100
+delay_max = 250
+pos_puma = 0
+pos_perros = 16 17 18 19 20 21 22 23 24 25 26 27

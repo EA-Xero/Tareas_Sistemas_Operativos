@@ -1,0 +1,6 @@
+# Ultra Dificil
+seed = 666
+delay_min = 50
+delay_max = 300
+pos_puma = 15
+pos_perros = 14 13 6 7 5 12 10 23 24 25 26 22
