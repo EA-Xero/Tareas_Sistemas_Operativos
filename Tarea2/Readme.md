@@ -28,4 +28,9 @@ Eso si, Kamikan distinta distribucion, pero al fin y al cabo el mismo juego
     - Logs/
     - Juego/
     - src/*.o
+ - Si quieres una limpieza explicita (por ejemplo borrar logs pero no game), puedes hacer lo siguiente:
+   - make clean: Ejecuta las tres inferiores al en secuencia
+   - make cleanSrc: Borra archivos.o de la carpeta src
+   - make cleanLogs: Borra la carpeta Logs y su contenido
+   - make cleanGame: Borra la carpeta Juego y su contenido
  - Basicamente te deja con lo mismo que como vino en el git
