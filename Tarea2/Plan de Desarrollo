@@ -11,4 +11,10 @@ Plan de Desarrollo
 
  - Fase 3: Juez de Mesa y Servidor Matchmaker. El hilo central que empareja N jugadores sin exceder M mesas. El Juez validará los movimientos, imprimirá el log visual y detectará las condiciones de victoria (6 perros capturados o el Puma acorralado) [Terminada]
 
+    Observacion al terminar la fase 3:
+    Veo bastante bien el programa, pero la info que expulsa a la terminal no sirve de nada, con mas de dos mesas ya ni se sabe como van las partidas, asi que voy a hacer algunos cambios:
+     - El juez solo mostrara las cosas principales del juego, es decir la Sincronización de jugadores y mesas, veredicto de partidas, etc..
+     - En los logs de las mesas se guardara todo.
+     - Como se ve en el cambio anterior, hice que los perros tuvieran un acto mas estrategico a ver si ganan alguna
+
  - Fase 4: Resiliencia. Captura de la señal SIGINT (Ctrl+C) e interrupciones para cerrar todo de forma ordenada, asegurando cero fugas de memoria (memory leaks) y liberando los recursos del sistema.
