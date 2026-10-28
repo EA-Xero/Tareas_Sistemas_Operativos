@@ -1,6 +1,7 @@
 #include "Tablero.hpp"
 #include <set>
 #include <queue>
+#include <sstream>
 
 // Constructor
 Tablero::Tablero() {
@@ -134,7 +135,7 @@ EstadoCasilla Tablero::getEstado(int id) const {
 }
 
 // Imprime el tablero en un formato de texto para que sea mas facil de leer
-void Tablero::imprimirTableroTextual() const {
+std::string Tablero::obtenerTableroComoString() const {
     std::lock_guard<std::mutex> lock(mtxTablero);
 
     auto sim = [this](int id) -> std::string {
@@ -145,42 +146,27 @@ void Tablero::imprimirTableroTextual() const {
         }
     };
 
-    std::cout << "\n=============================================\n";
-    std::cout << "          ESTADO ACTUAL DEL TABLERO          \n";
-    std::cout << "=============================================\n\n";
+    std::ostringstream oss;
+    oss << "\n";
+    oss << "                     (" << sim(0) << ")\n";
+    oss << "                    ╱ │ ╲\n";
+    oss << "                  ╱   │   ╲\n";
+    oss << "                ╱     │     ╲\n";
+    oss << "              ╱       │       ╲\n";
+    oss << "            (" << sim(1) << ")───────┼───────(" << sim(2) << ")\n";
+    oss << "          ╱   │       │       │   ╲\n";
+    oss << "        ╱     │       │       │     ╲\n";
+    oss << "  (" << sim(3)  << ")───────(" << sim(4)  << ")───────(" << sim(5)  << ")───────(" << sim(6)  << ")───────(" << sim(7)  << ")\n";
+    oss << "   │        │        │        │        │\n";
+    oss << "  (" << sim(8)  << ")───────(" << sim(9)  << ")───────(" << sim(10) << ")───────(" << sim(11) << ")───────(" << sim(12) << ")\n";
+    oss << "   │        │        │        │        │\n";
+    oss << "  (" << sim(13) << ")───────(" << sim(14) << ")───────(" << sim(15) << ")───────(" << sim(16) << ")───────(" << sim(17) << ")\n";
+    oss << "   │        │        │        │        │\n";
+    oss << "  (" << sim(18) << ")───────(" << sim(19) << ")───────(" << sim(20) << ")───────(" << sim(21) << ")───────(" << sim(22) << ")\n";
+    oss << "   │        │        │        │        │\n";
+    oss << "  (" << sim(23) << ")───────(" << sim(24) << ")───────(" << sim(25) << ")───────(" << sim(26) << ")───────(" << sim(27) << ")\n";
 
-    // 1. TRONO ELEVADO (Alineación vertical perfecta con la grilla)
-    std::cout << "                     (" << sim(0) << ")\n";
-    std::cout << "                    ╱ │ ╲\n";
-    std::cout << "                  ╱   │   ╲\n";
-    std::cout << "                ╱     │     ╲\n";
-    std::cout << "              (" << sim(1) << ")──────┼──────(" << sim(2) << ")\n";
-    std::cout << "            ╱   │     │     │   ╲\n";
-    std::cout << "          ╱     │     │     │     ╲\n";
-    std::cout << "        ╱       │     │     │       ╲\n";
-    std::cout << "      ╱         │     │     │         ╲\n";
-
-    // 2. GRILLA PRINCIPAL 5x5 (Columnas alineadas directamente con el Trono)
-    // Fila 0 (Nodos 3, 4, 5, 6, 7)
-    std::cout << "  (" << sim(3)  << ")──────(" << sim(4)  << ")──────(" << sim(5)  << ")──────(" << sim(6)  << ")──────(" << sim(7)  << ")\n";
-    std::cout << "   │        │        │        │        │\n";
-
-    // Fila 1 (Nodos 8, 9, 10, 11, 12)
-    std::cout << "  (" << sim(8)  << ")──────(" << sim(9)  << ")──────(" << sim(10) << ")──────(" << sim(11) << ")──────(" << sim(12) << ")\n";
-    std::cout << "   │        │        │        │        │\n";
-
-    // Fila 2 (Nodos 13, 14, 15, 16, 17)
-    std::cout << "  (" << sim(13) << ")──────(" << sim(14) << ")──────(" << sim(15) << ")──────(" << sim(16) << ")──────(" << sim(17) << ")\n";
-    std::cout << "   │        │        │        │        │\n";
-
-    // Fila 3 (Nodos 18, 19, 20, 21, 22)
-    std::cout << "  (" << sim(18) << ")──────(" << sim(19) << ")──────(" << sim(20) << ")──────(" << sim(21) << ")──────(" << sim(22) << ")\n";
-    std::cout << "   │        │        │        │        │\n";
-
-    // Fila 4 (Nodos 23, 24, 25, 26, 27)
-    std::cout << "  (" << sim(23) << ")──────(" << sim(24) << ")──────(" << sim(25) << ")──────(" << sim(26) << ")──────(" << sim(27) << ")\n";
-
-    std::cout << "\n=============================================\n\n";
+    return oss.str();
 }
 
 std::vector<int> Tablero::obtenerVecinosLibres(int idCasilla) const {

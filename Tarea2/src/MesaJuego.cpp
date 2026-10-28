@@ -79,6 +79,7 @@ void MesaJuego::rutinaPuma() {
                            " sobre perro en " + std::to_string(cap.first) + 
                            " hacia " + std::to_string(cap.second) + 
                            " (Total capturados: " + std::to_string(perrosCapturados.load()) + ")");
+                escribirLog("ESTADO DEL TABLERO TRAS LA CAPTURA:" + tablero.obtenerTableroComoString());
                 continue;
             }
         }
@@ -95,6 +96,7 @@ void MesaJuego::rutinaPuma() {
             if (tablero.intentarMoverPieza(posActual, destino, EstadoCasilla::PUMA)) {
                 totalMovimientos++;
                 escribirLog("[PUMA] Movimiento de " + std::to_string(posActual) + " -> " + std::to_string(destino));
+                escribirLog("ESTADO DEL TABLERO TRAS EL MOVIMIENTO:" + tablero.obtenerTableroComoString());
             }
         }
     }
@@ -121,12 +123,14 @@ void MesaJuego::rutinaPerro(int idPerro) {
         // 2. Localizar la posición actual del Puma para calcular la estrategia
         int posPuma = tablero.buscarPosicionPuma();
         int destinoElegido = -1;
+        std::string razon = "";
 
         if (posPuma != -1) {
             // Estrategia A: Si algún vecino está al lado del Puma, priorizarlo para acorralarlo
             for (int v : vecinos) {
                 if (tablero.esVecino(v, posPuma)) {
                     destinoElegido = v;
+                    razon = "Acorralamiento directo (alcanza casilla adyacente al Puma)";
                     break;
                 }
             }
@@ -139,6 +143,7 @@ void MesaJuego::rutinaPerro(int idPerro) {
                     if (dist < minDistancia) {
                         minDistancia = dist;
                         destinoElegido = v;
+                        razon = "Reducción de distancia hacia el Puma (Distancia objetivo: " + std::to_string(dist) + ")";
                     }
                 }
             }
@@ -147,23 +152,30 @@ void MesaJuego::rutinaPerro(int idPerro) {
         // Fallback: Si no hay estrategia clara o no se encontró al Puma, elegir al azar
         if (destinoElegido == -1) {
             destinoElegido = vecinos[rng() % vecinos.size()];
+            razon = "Movimiento exploratorio aleatorio (sin ruta directa identificada)";
         }
 
         // 3. Intentar el movimiento thread-safe sobre el tablero
         if (tablero.intentarMoverPieza(posActual, destinoElegido, EstadoCasilla::PERRO)) {
             totalMovimientos++;
-            escribirLog("[PERRO " + std::to_string(idPerro) + "] Movimiento estratégico de " + 
-                       std::to_string(posActual) + " -> " + std::to_string(destinoElegido));
+            escribirLog("[PERRO " + std::to_string(idPerro) + "] Movimiento de " + 
+                       std::to_string(posActual) + " -> " + std::to_string(destinoElegido) + 
+                       " | Razón: " + razon);
+            escribirLog("ESTADO DEL TABLERO TRAS EL MOVIMIENTO:" + tablero.obtenerTableroComoString());
         }
     }
 }
 
 // Encargado de determinar la partida y controlarla
 void MesaJuego::rutinaJuez() {
-    std::cout << "\n[JUEZ MESA " << idMesa << "] Comienza la partida entre Jugador " 
-              << idJugadorPuma << " (Puma) y Jugador " << idJugadorPerros << " (Perros).\n";
-    std::cout << "[JUEZ MESA " << idMesa << "] Estado Inicial del Tablero:";
-    tablero.imprimirTableroTextual();
+    // Registro inicial en consola (Matchmaker)
+    std::cout << "[MESA " << idMesa << "] Comienza la partida entre Jugador " 
+              << idJugadorPuma << " (Puma) y Jugador " << idJugadorPerros << " (Perros)." << std::endl;
+
+    // Registro inicial detallado en Log de la mesa
+    escribirLog("=== INICIO DE LA PARTIDA EN MESA " + std::to_string(idMesa) + " ===");
+    escribirLog("Jugador Puma: " + std::to_string(idJugadorPuma) + " | Jugador Perros: " + std::to_string(idJugadorPerros));
+    escribirLog("ESTADO INICIAL DEL TABLERO:" + tablero.obtenerTableroComoString());
 
     int capturasPrevias = 0;
 
@@ -171,22 +183,27 @@ void MesaJuego::rutinaJuez() {
         // a mimir un ratico
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // Al despertar, revisa si ocurrió una nueva captura, el juez imprime actualización en consola
+        // Al despertar, revisa si ocurrió una nueva captura para registrarla en el Log de la mesa
         if (perrosCapturados.load() > capturasPrevias) {
             capturasPrevias = perrosCapturados.load();
-            std::cout << "[JUEZ MESA " << idMesa << "] ¡EVENTO: Captura realizada! Perros restantes: " 
-                      << (12 - capturasPrevias) << "\n";
-            tablero.imprimirTableroTextual();
+            escribirLog("[JUEZ] ¡EVENTO: Captura realizada! Perros restantes: " + std::to_string(12 - capturasPrevias));
         }
 
         // 1. Condición de Victoria Puma (6 perros capturados)
         if (perrosCapturados.load() >= 6) {
             resultado = ResultadoPartida::VICTORIA_PUMA;
-            std::cout << "\n==============================================";
-            std::cout << "\n[JUEZ MESA " << idMesa << "] ¡VICTORIA DEL PUMA (Jugador " << idJugadorPuma << ")!";
-            std::cout << "\nMotivo: Se capturaron 6 perros. Movimientos totales: " << totalMovimientos.load();
-            std::cout << "\n==============================================\n";
             juegoActivo = false;
+
+            // Notificación global a consola
+            std::cout << "[MESA " << idMesa << "] ¡VICTORIA DEL PUMA (Jugador " << idJugadorPuma 
+                      << ")! Capturas: 6 | Movimientos totales: " << totalMovimientos.load() << std::endl;
+
+            // Registro en Log
+            escribirLog("\n=== FIN DE LA PARTIDA ===");
+            escribirLog("GANADOR: PUMA (Jugador " + std::to_string(idJugadorPuma) + ")");
+            escribirLog("Motivo: Se capturaron 6 perros.");
+            escribirLog("Movimientos totales registrados: " + std::to_string(totalMovimientos.load()));
+            escribirLog("ESTADO FINAL DEL TABLERO:" + tablero.obtenerTableroComoString());
             break;
         }
 
@@ -194,18 +211,21 @@ void MesaJuego::rutinaJuez() {
         int posPuma = tablero.buscarPosicionPuma();
         if (posPuma != -1 && tablero.pumaEstaAcorralado(posPuma)) {
             resultado = ResultadoPartida::VICTORIA_PERROS;
-            std::cout << "\n==============================================";
-            std::cout << "\n[JUEZ MESA " << idMesa << "] ¡VICTORIA DE LOS PERROS (Jugador " << idJugadorPerros << ")!";
-            std::cout << "\nMotivo: El Puma fue completamente acorralado. Movimientos totales: " << totalMovimientos.load();
-            std::cout << "\n==============================================\n";
             juegoActivo = false;
+
+            // Notificación global a consola
+            std::cout << "[MESA " << idMesa << "] ¡VICTORIA DE LOS PERROS (Jugador " << idJugadorPerros 
+                      << ")! Motivo: Puma acorralado | Movimientos totales: " << totalMovimientos.load() << std::endl;
+
+            // Registro en Log
+            escribirLog("\n=== FIN DE LA PARTIDA ===");
+            escribirLog("GANADOR: PERROS (Jugador " + std::to_string(idJugadorPerros) + ")");
+            escribirLog("Motivo: El Puma fue completamente acorralado.");
+            escribirLog("Movimientos totales registrados: " + std::to_string(totalMovimientos.load()));
+            escribirLog("ESTADO FINAL DEL TABLERO:" + tablero.obtenerTableroComoString());
             break;
         }
     }
-
-    std::cout << "[JUEZ MESA " << idMesa << "] Estado Final del Tablero:";
-    tablero.imprimirTableroTextual();
-    escribirLog("=== FIN DE LA PARTIDA. Movimientos totales registrados: " + std::to_string(totalMovimientos.load()) + " ===");
 }
 
 // Inicia la partida, con configuracion de perro, puma y id ya cargada

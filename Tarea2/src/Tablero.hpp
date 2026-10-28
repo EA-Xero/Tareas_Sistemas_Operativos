@@ -38,7 +38,8 @@ public:
     void colocarPiezasIniciales(const ConfigJuego& config = ConfigJuego());
 
     // Métodos para inspección y depuración
-    void imprimirTableroTextual() const;
+    // Retorna el tablero como std::string para los Logs
+    std::string obtenerTableroComoString() const;
     EstadoCasilla getEstado(int id) const;
 
     // Métodos concurrentes seguros (Thread-safe)
