@@ -148,3 +148,70 @@ void Tablero::imprimirTableroTextual() const {
     }
     std::cout << "===========================\n\n";
 }
+
+std::vector<int> Tablero::obtenerVecinosLibres(int idCasilla) const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    std::vector<int> libres;
+    if (idCasilla < 0 || idCasilla >= static_cast<int>(casillas.size())) return libres;
+
+    for (int vecinoId : casillas[idCasilla].vecinos) {
+        if (casillas[vecinoId].estado == EstadoCasilla::VACIO) {
+            libres.push_back(vecinoId);
+        }
+    }
+    return libres;
+}
+
+bool Tablero::intentarMoverPieza(int origen, int destino, EstadoCasilla tipoPieza) {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+
+    // Validar rangos
+    if (origen < 0 || origen >= static_cast<int>(casillas.size()) ||
+        destino < 0 || destino >= static_cast<int>(casillas.size())) {
+        return false;
+    }
+
+    // Verificar que el origen mantenga la pieza esperada y el destino siga VACÍO
+    if (casillas[origen].estado == tipoPieza && casillas[destino].estado == EstadoCasilla::VACIO) {
+        casillas[origen].estado = EstadoCasilla::VACIO;
+        casillas[destino].estado = tipoPieza;
+        return true; // Movimiento exitoso
+    }
+
+    return false; // Otra ficha ganó la casilla destino primero (Race condition evitada)
+}
+
+bool Tablero::intentarCapturaPuma(int origen, int intermedio, int destino) {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+
+    if (casillas[origen].estado == EstadoCasilla::PUMA &&
+        casillas[intermedio].estado == EstadoCasilla::PERRO &&
+        casillas[destino].estado == EstadoCasilla::VACIO) {
+
+        casillas[origen].estado = EstadoCasilla::VACIO;
+        casillas[intermedio].estado = EstadoCasilla::VACIO; // El perro es capturado[cite: 2]
+        casillas[destino].estado = EstadoCasilla::PUMA;
+        return true;
+    }
+
+    return false;
+}
+
+int Tablero::buscarPosicionPuma() const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    for (size_t i = 0; i < casillas.size(); ++i) {
+        if (casillas[i].estado == EstadoCasilla::PUMA) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+std::vector<int> Tablero::buscarPosicionesPerros() const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    std::vector<int> perros;
+    for (size_t i = 0; i < casillas.size(); ++i) {
+        if (casillas[i].estado == EstadoCasilla::PERRO) {
+            perros.push_back(static_cast<int>(i));
+        }
+    }
+    return perros;
+}

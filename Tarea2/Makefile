@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude
-SRC = src/main.cpp src/Tablero.cpp src/Configuracion.cpp
+CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude -pthread
+SRC = src/main.cpp src/Tablero.cpp src/Configuracion.cpp src/MesaJuego.cpp
 OBJ = $(SRC:.cpp=.o)
 TARGET = torneo
 

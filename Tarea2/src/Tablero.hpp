@@ -4,7 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <string>
-
+#include <mutex>
 #include "Configuracion.hpp"
 
 // Estados posibles de cada posición en el tablero
@@ -24,6 +24,7 @@ struct Casilla {
 class Tablero {
 private:
     std::vector<Casilla> casillas;
+    mutable std::mutex mtxTablero; // Mutex para exclusión mutua en accesos y movimientos[cite: 2, 4]
     
     // Función auxiliar interna para conectar dos nodos en el grafo
     void agregarArista(int u, int v);
@@ -39,6 +40,19 @@ public:
     // Métodos para inspección y depuración
     void imprimirTableroTextual() const;
     EstadoCasilla getEstado(int id) const;
+
+    // Métodos concurrentes seguros (Thread-safe)
+    std::vector<int> obtenerVecinosLibres(int idCasilla) const;
+    
+    // Intenta mover una pieza de origen a destino de forma atómica
+    bool intentarMoverPieza(int origen, int destino, EstadoCasilla tipoPieza);
+    
+    // Intenta captura del Puma: salta de 'origen' sobre 'intermedio' (donde hay un Perro) a 'destino' (VACIO)
+    bool intentarCapturaPuma(int origen, int intermedio, int destino);
+
+    // Obtener la posición actual de una ficha
+    int buscarPosicionPuma() const;
+    std::vector<int> buscarPosicionesPerros() const;
 };
 
 #endif // TABLERO_HPP

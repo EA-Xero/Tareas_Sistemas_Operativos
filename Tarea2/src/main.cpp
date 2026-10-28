@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include "Tablero.hpp"
 #include "Configuracion.hpp"
+#include "MesaJuego.hpp"
+
 using namespace std;
 int main(int argc, char* argv[]) {
     // Invocacion requerida: ./torneo N M [config.txt]
@@ -30,9 +32,8 @@ int main(int argc, char* argv[]) {
     cout << "Configuracion de retardo: [" << config.delayMin << " ms - " << config.delayMax << " ms]\n";
     cout << "Seed: " << config.seed << "\n";
 
-    Tablero tableroPrueba;
-    tableroPrueba.colocarPiezasIniciales(config);
-    tableroPrueba.imprimirTableroTextual();
+    MesaJuego mesa(config);
+    mesa.iniciarPartidaPrueba(3);
 
     return 0;
 }
