@@ -34,3 +34,11 @@ Eso si, Kamikan distinta distribucion, pero al fin y al cabo el mismo juego
    - make cleanLogs: Borra la carpeta Logs y su contenido
    - make cleanGame: Borra la carpeta Juego y su contenido
  - Basicamente te deja con lo mismo que como vino en el git
+
+## Prueba
+Se realizo una prueba de 12.000 Jugadores, con 2000 Threads disponibles para mesas, el resultado (aproximado) se puede ver en el archivo adjunto "Rendimiento.png", donde a pesar de que se coloco 2000 Mesas disponibles, solo se usan unas 500 aprox, como se sabe esto?:
+ - El programa principal (matchmaker) es 1 hilo
+ - Luego, por cada mesa se abren 14 hilos mas, 12 perros, 1 puma y 1 Juez
+   En nuestro caso, 2000 x 14 = 28.000 hilos potenciales, pero como se ve en la captura, el procesador permite 6856 hilos, lo que equivale a: (6856)/14 = 489 mesas, es lo que es capaz de ejecutar la cpu en ese momento, aunque el limite de mesas sea mayor simplemente no puede llegar a la velocidad para usarlo completo (como se puede ver en el Load Average, que llega a 33 practicamente en una cpu de 4 cores T-T), el proceso es ligero en memoria, pero su uso masivo de threads realiza mucho context switching
+ - Para arreglar esto abria que modificar bastante el codigo, pero asi se va a quedar pa la rubrica
+ - En resumen, el rendimiento depende de la cantidad y la maquina que lo ejecute :)
