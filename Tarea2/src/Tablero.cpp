@@ -148,15 +148,18 @@ void Tablero::imprimirTableroTextual() const {
     std::cout << "          ESTADO ACTUAL DEL TABLERO          \n";
     std::cout << "=============================================\n\n";
 
-    // 1. TRONO (Vértice 0 y base 1, 2 conectando a las esquinas 3 y 7)
+    // 1. TRONO ELEVADO (Alineación vertical perfecta con la grilla)
     std::cout << "                     (" << sim(0) << ")\n";
     std::cout << "                    ╱ │ ╲\n";
     std::cout << "                  ╱   │   ╲\n";
-    std::cout << "                (" << sim(1) << ")───┼───(" << sim(2) << ")\n";
-    std::cout << "              ╱  │    │    │  ╲\n";
-    std::cout << "            ╱    │    │    │    ╲\n";
+    std::cout << "                ╱     │     ╲\n";
+    std::cout << "              (" << sim(1) << ")──────┼──────(" << sim(2) << ")\n";
+    std::cout << "            ╱   │     │     │   ╲\n";
+    std::cout << "          ╱     │     │     │     ╲\n";
+    std::cout << "        ╱       │     │     │       ╲\n";
+    std::cout << "      ╱         │     │     │         ╲\n";
 
-    // 2. GRILLA PRINCIPAL 5x5 (Conexiones alineadas exactamente sobre/debajo de los paréntesis)
+    // 2. GRILLA PRINCIPAL 5x5 (Columnas alineadas directamente con el Trono)
     // Fila 0 (Nodos 3, 4, 5, 6, 7)
     std::cout << "  (" << sim(3)  << ")──────(" << sim(4)  << ")──────(" << sim(5)  << ")──────(" << sim(6)  << ")──────(" << sim(7)  << ")\n";
     std::cout << "   │        │        │        │        │\n";
