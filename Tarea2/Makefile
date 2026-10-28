@@ -24,9 +24,18 @@ $(TARGET): $(OBJ)
 src/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-clean:
+cleanSrc:
+	@echo "Limpiando carpeta src/"
 	rm -f src/*.o
-	rm -rf $(OUT_DIR)
+
+cleanLogs:
+	@echo "Limpiando carpeta Logs/"
 	rm -rf Logs
 
-.PHONY: all clean
+cleanGame:
+	@echo "Limpiando carpeta Juego/"
+	rm -rf $(OUT_DIR)
+
+clean: cleanGame cleanSrc cleanLogs
+
+.PHONY: all cleanSrc cleanLogs cleanGame clean
