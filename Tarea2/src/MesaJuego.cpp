@@ -102,34 +102,58 @@ void MesaJuego::rutinaPuma() {
 
 // Movimientos y acciones de perros
 void MesaJuego::rutinaPerro(int idPerro) {
-    // retardo aleatorio para el perro
     std::mt19937 rng(config.seed + idMesa * 100 + idPerro + 1);
-
 
     while (juegoActivo) {
         esperarRetardoAleatorio(rng);
         if (!juegoActivo) break;
 
-        // busca posiciones disponibles
+        // 1. Obtener todas las posiciones actuales de los perros
         auto posiciones = tablero.buscarPosicionesPerros();
-        // si no hay, continuar al siguiente ciclo
         if (posiciones.empty()) continue;
 
-        //Agarra su posicion actual
+        // Determinar la posición de este perro específico
         int posActual = posiciones[idPerro % posiciones.size()];
-        //Agarra posiciones de los vecinos
         auto vecinos = tablero.obtenerVecinosLibres(posActual);
 
-        // Si la matriz de vecinos no es vacia entra
-        if (!vecinos.empty()) {
-            // Selecciona destino
-            int destino = vecinos[rng() % vecinos.size()];
-            // Intenta moverse
-            if (tablero.intentarMoverPieza(posActual, destino, EstadoCasilla::PERRO)) {
-                totalMovimientos++;
-                escribirLog("[PERRO " + std::to_string(idPerro) + "] Movimiento de " + 
-                           std::to_string(posActual) + " -> " + std::to_string(destino));
+        if (vecinos.empty()) continue;
+
+        // 2. Localizar la posición actual del Puma para calcular la estrategia
+        int posPuma = tablero.buscarPosicionPuma();
+        int destinoElegido = -1;
+
+        if (posPuma != -1) {
+            // Estrategia A: Si algún vecino está al lado del Puma, priorizarlo para acorralarlo
+            for (int v : vecinos) {
+                if (tablero.esVecino(v, posPuma)) {
+                    destinoElegido = v;
+                    break;
+                }
             }
+
+            // Estrategia B: Si no se puede acorralar directamente, elegir el vecino más cercano al Puma
+            if (destinoElegido == -1) {
+                int minDistancia = 999;
+                for (int v : vecinos) {
+                    int dist = tablero.obtenerDistanciaGrafo(v, posPuma);
+                    if (dist < minDistancia) {
+                        minDistancia = dist;
+                        destinoElegido = v;
+                    }
+                }
+            }
+        }
+
+        // Fallback: Si no hay estrategia clara o no se encontró al Puma, elegir al azar
+        if (destinoElegido == -1) {
+            destinoElegido = vecinos[rng() % vecinos.size()];
+        }
+
+        // 3. Intentar el movimiento thread-safe sobre el tablero
+        if (tablero.intentarMoverPieza(posActual, destinoElegido, EstadoCasilla::PERRO)) {
+            totalMovimientos++;
+            escribirLog("[PERRO " + std::to_string(idPerro) + "] Movimiento estratégico de " + 
+                       std::to_string(posActual) + " -> " + std::to_string(destinoElegido));
         }
     }
 }

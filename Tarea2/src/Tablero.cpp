@@ -1,5 +1,6 @@
 #include "Tablero.hpp"
 #include <set>
+#include <queue>
 
 // Constructor
 Tablero::Tablero() {
@@ -233,7 +234,9 @@ bool Tablero::intentarCapturaPuma(int origen, int intermedio, int destino) {
 int Tablero::buscarPosicionPuma() const {
     std::lock_guard<std::mutex> lock(mtxTablero);
     for (size_t i = 0; i < casillas.size(); ++i) {
-        if (casillas[i].estado == EstadoCasilla::PUMA) return static_cast<int>(i);
+        if (casillas[i].estado == EstadoCasilla::PUMA) {
+            return static_cast<int>(i);
+        }
     }
     return -1;
 }
@@ -290,4 +293,40 @@ bool Tablero::pumaEstaAcorralado(int posPuma) const {
     }
 
     return true; // No tiene ningún movimiento válido disponible
+}
+
+bool Tablero::esVecino(int nodoA, int nodoB) const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    if (nodoA < 0 || nodoA >= (int)casillas.size()) return false;
+    for (int v : casillas[nodoA].vecinos) {
+        if (v == nodoB) return true;
+    }
+    return false;
+}
+
+// Cálculo de distancia mediante BFS simple en el grafo
+int Tablero::obtenerDistanciaGrafo(int origen, int destino) const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    if (origen == destino) return 0;
+
+    std::vector<int> dist(casillas.size(), -1);
+    std::queue<int> q;
+
+    dist[origen] = 0;
+    q.push(origen);
+
+    while (!q.empty()) {
+        int actual = q.front();
+        q.pop();
+
+        if (actual == destino) return dist[actual];
+
+        for (int vecino : casillas[actual].vecinos) {
+            if (dist[vecino] == -1) {
+                dist[vecino] = dist[actual] + 1;
+                q.push(vecino);
+            }
+        }
+    }
+    return 999; // Si no hay camino
 }

@@ -57,6 +57,8 @@ public:
     // Métodos de validación agregados para la Fase 3
     std::vector<std::pair<int, int>> obtenerCapturasPosiblesPuma(int posPuma) const;
     bool pumaEstaAcorralado(int posPuma) const;
+    bool esVecino(int nodoA, int nodoB) const;
+    int obtenerDistanciaGrafo(int origen, int destino) const;
 };
 
 #endif // TABLERO_HPP
