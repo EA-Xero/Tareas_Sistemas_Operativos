@@ -24,7 +24,7 @@ struct Casilla {
 class Tablero {
 private:
     std::vector<Casilla> casillas;
-    mutable std::mutex mtxTablero; // Mutex para exclusión mutua en accesos y movimientos[cite: 2, 4]
+    mutable std::mutex mtxTablero; // Mutex para exclusión mutua en accesos y movimientos
     
     // Función auxiliar interna para conectar dos nodos en el grafo
     void agregarArista(int u, int v);
@@ -53,6 +53,10 @@ public:
     // Obtener la posición actual de una ficha
     int buscarPosicionPuma() const;
     std::vector<int> buscarPosicionesPerros() const;
+
+    // Métodos de validación agregados para la Fase 3
+    std::vector<std::pair<int, int>> obtenerCapturasPosiblesPuma(int posPuma) const;
+    bool pumaEstaAcorralado(int posPuma) const;
 };
 
 #endif // TABLERO_HPP

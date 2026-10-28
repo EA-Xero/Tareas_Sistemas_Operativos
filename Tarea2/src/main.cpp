@@ -1,39 +1,28 @@
 #include <iostream>
 #include <cstdlib>
-#include "Tablero.hpp"
 #include "Configuracion.hpp"
-#include "MesaJuego.hpp"
+#include "Matchmaker.hpp"
 
-using namespace std;
 int main(int argc, char* argv[]) {
-    // Invocacion requerida: ./torneo N M [config.txt]
+    //Verificacion basica de argumentos
     if (argc < 3) {
-        cout << "Uso: " << argv[0] << " N M [config.txt]\n";
-        cout << "  N: Numero de clientes/jugadores\n";
-        cout << "  M: Numero maximo de mesas concurrentes\n";
-        cout << "  config.txt: Archivo opcional de configuracion\n";
+        std::cout << "Uso: " << argv[0] << " N M [config.txt]\n";
         return 1;
     }
 
-    int nJugadores = atoi(argv[1]);
-    int mMesas = atoi(argv[2]);
+    // Cantidad de mesas y jugadores
+    int nJugadores = std::atoi(argv[1]);
+    int mMesas = std::atoi(argv[2]);
 
-    cout << "=== PARÁMETROS DEL TORNEO ===\n";
-    cout << "Jugadores (N): " << nJugadores << "\n";
-    cout << "Mesas Maximas (M): " << mMesas << "\n";
-
+    // Declaracion y definicion del archivo de configuracion
     ConfigJuego config;
     if (argc >= 4) {
         ParserConfiguracion::cargarDesdeArchivo(argv[3], config);
-    } else {
-        cout << "[CONFIG] Sin archivo de configuracion. Usando valores predeterminados.\n";
     }
 
-    cout << "Configuracion de retardo: [" << config.delayMin << " ms - " << config.delayMax << " ms]\n";
-    cout << "Seed: " << config.seed << "\n";
-
-    MesaJuego mesa(config);
-    mesa.iniciarPartidaPrueba(3);
+    //Inicia el torneo
+    Matchmaker torneoServer(nJugadores, mMesas, config);
+    torneoServer.iniciarTorneo();
 
     return 0;
 }

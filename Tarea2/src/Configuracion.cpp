@@ -4,6 +4,8 @@
 #include <iostream>
 #include <algorithm>
 
+//Archivo encargado de cargar la configuracion inicial de cada mesa, parsear y aplicar
+
 // Auxiliar para quitar espacios en blanco al inicio y final
 static std::string trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\r\n");
@@ -12,6 +14,7 @@ static std::string trim(const std::string& str) {
     return str.substr(first, (last - first + 1));
 }
 
+// parsea el archivo.txt de configuracion y le asigna los valores dentro a variables internas del juego
 bool ParserConfiguracion::cargarDesdeArchivo(const std::string& ruta, ConfigJuego& config) {
     std::ifstream archivo(ruta);
     if (!archivo.is_open()) {

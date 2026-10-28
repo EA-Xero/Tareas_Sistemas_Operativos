@@ -1,22 +1,26 @@
 #include "Tablero.hpp"
 #include <set>
 
+// Constructor
 Tablero::Tablero() {
     inicializarGrafo();
     colocarPiezasIniciales();
 }
 
+// Destructor
 Tablero::~Tablero() {
     // Por ahora no requiere limpieza manual ya que std::vector libera su memoria sola
 }
 
+// Aristas o direcciones hacia los nodos donde estaran los perros y el puma
 void Tablero::agregarArista(int u, int v) {
     casillas[u].vecinos.push_back(v);
     casillas[v].vecinos.push_back(u);
 }
 
+// Creamos el grafo
 void Tablero::inicializarGrafo() {
-    // Total: 28 casillas (3 en el trono + 25 en la matriz 5x5)
+    // Total: 28 casillas (3 en el trono [Triangulo hacia arriba como en la rubrica :v ] + 25 en la matriz 5x5)
     casillas.resize(28);
     for (int i = 0; i < 28; ++i) {
         casillas[i].id = i;
@@ -29,11 +33,21 @@ void Tablero::inicializarGrafo() {
     agregarArista(0, 2);
     agregarArista(1, 2);
 
+    //basicamente esto:
+    /*
+        x
+       / \
+      x - x
+
+    */
+
     // Conexión del trono con la fila superior de la grilla (Nodos 3, 4, 5, 6, 7)
     agregarArista(1, 3);
     agregarArista(1, 5);
     agregarArista(2, 5);
     agregarArista(2, 7);
+    // Conecta el triangulo al cuadrado 5x5
+
 
     // 2. Conexiones de la Grilla 5x5 (Nodos 3 al 27)
     // Mapeo: fila = (id - 3) / 5, columna = (id - 3) % 5
@@ -48,11 +62,6 @@ void Tablero::inicializarGrafo() {
             // Conexión vertical hacia abajo
             if (r < 4) {
                 agregarArista(actual, actual + 5);
-            }
-            // Conexiones diagonales opcionales según el diseño de tablero Komikan tradicional
-            if ((r + c) % 2 == 0) {
-                if (r < 4 && c < 4) agregarArista(actual, actual + 6);
-                if (r < 4 && c > 0) agregarArista(actual, actual + 4);
             }
         }
     }
@@ -125,28 +134,49 @@ EstadoCasilla Tablero::getEstado(int id) const {
 
 // Imprime el tablero en un formato de texto para que sea mas facil de leer
 void Tablero::imprimirTableroTextual() const {
-    std::cout << "\n=== ESTADO DEL TABLERO ===\n";
-    auto charEstado = [](EstadoCasilla e) -> char {
-        switch (e) {
-            case EstadoCasilla::PUMA: return 'X';  // Puma
-            case EstadoCasilla::PERRO: return 'O'; // Perro
-            default: return '.';                  // Vacío
+    std::lock_guard<std::mutex> lock(mtxTablero);
+
+    auto sim = [this](int id) -> std::string {
+        switch (casillas[id].estado) {
+            case EstadoCasilla::PUMA:  return "X";
+            case EstadoCasilla::PERRO: return "O";
+            default:                   return "·";
         }
     };
 
-    std::cout << "       [" << charEstado(casillas[0].estado) << "]\n";
-    std::cout << "     [" << charEstado(casillas[1].estado) << "]   [" << charEstado(casillas[2].estado) << "]\n";
-    std::cout << "  -----------------\n";
+    std::cout << "\n=============================================\n";
+    std::cout << "          ESTADO ACTUAL DEL TABLERO          \n";
+    std::cout << "=============================================\n\n";
 
-    for (int r = 0; r < 5; ++r) {
-        std::cout << "  ";
-        for (int c = 0; c < 5; ++c) {
-            int id = 3 + r * 5 + c;
-            std::cout << charEstado(casillas[id].estado) << "   ";
-        }
-        std::cout << "\n";
-    }
-    std::cout << "===========================\n\n";
+    // 1. TRONO (Vértice 0 y base 1, 2 conectando a las esquinas 3 y 7)
+    std::cout << "                     (" << sim(0) << ")\n";
+    std::cout << "                    ╱ │ ╲\n";
+    std::cout << "                  ╱   │   ╲\n";
+    std::cout << "                (" << sim(1) << ")───┼───(" << sim(2) << ")\n";
+    std::cout << "              ╱  │    │    │  ╲\n";
+    std::cout << "            ╱    │    │    │    ╲\n";
+
+    // 2. GRILLA PRINCIPAL 5x5 (Conexiones alineadas exactamente sobre/debajo de los paréntesis)
+    // Fila 0 (Nodos 3, 4, 5, 6, 7)
+    std::cout << "  (" << sim(3)  << ")──────(" << sim(4)  << ")──────(" << sim(5)  << ")──────(" << sim(6)  << ")──────(" << sim(7)  << ")\n";
+    std::cout << "   │        │        │        │        │\n";
+
+    // Fila 1 (Nodos 8, 9, 10, 11, 12)
+    std::cout << "  (" << sim(8)  << ")──────(" << sim(9)  << ")──────(" << sim(10) << ")──────(" << sim(11) << ")──────(" << sim(12) << ")\n";
+    std::cout << "   │        │        │        │        │\n";
+
+    // Fila 2 (Nodos 13, 14, 15, 16, 17)
+    std::cout << "  (" << sim(13) << ")──────(" << sim(14) << ")──────(" << sim(15) << ")──────(" << sim(16) << ")──────(" << sim(17) << ")\n";
+    std::cout << "   │        │        │        │        │\n";
+
+    // Fila 3 (Nodos 18, 19, 20, 21, 22)
+    std::cout << "  (" << sim(18) << ")──────(" << sim(19) << ")──────(" << sim(20) << ")──────(" << sim(21) << ")──────(" << sim(22) << ")\n";
+    std::cout << "   │        │        │        │        │\n";
+
+    // Fila 4 (Nodos 23, 24, 25, 26, 27)
+    std::cout << "  (" << sim(23) << ")──────(" << sim(24) << ")──────(" << sim(25) << ")──────(" << sim(26) << ")──────(" << sim(27) << ")\n";
+
+    std::cout << "\n=============================================\n\n";
 }
 
 std::vector<int> Tablero::obtenerVecinosLibres(int idCasilla) const {
@@ -189,7 +219,7 @@ bool Tablero::intentarCapturaPuma(int origen, int intermedio, int destino) {
         casillas[destino].estado == EstadoCasilla::VACIO) {
 
         casillas[origen].estado = EstadoCasilla::VACIO;
-        casillas[intermedio].estado = EstadoCasilla::VACIO; // El perro es capturado[cite: 2]
+        casillas[intermedio].estado = EstadoCasilla::VACIO; // El perro es capturado
         casillas[destino].estado = EstadoCasilla::PUMA;
         return true;
     }
@@ -214,4 +244,47 @@ std::vector<int> Tablero::buscarPosicionesPerros() const {
         }
     }
     return perros;
+}
+
+std::vector<std::pair<int, int>> Tablero::obtenerCapturasPosiblesPuma(int posPuma) const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    std::vector<std::pair<int, int>> capturas;
+
+    if (posPuma < 0 || posPuma >= static_cast<int>(casillas.size())) return capturas;
+
+    for (int vecinoId : casillas[posPuma].vecinos) {
+        // Si hay un perro adyacente
+        if (casillas[vecinoId].estado == EstadoCasilla::PERRO) {
+            // Buscar si hay una casilla vacía detrás
+            for (int saltoId : casillas[vecinoId].vecinos) {
+                if (saltoId != posPuma && casillas[saltoId].estado == EstadoCasilla::VACIO) {
+                    capturas.push_back({vecinoId, saltoId});
+                }
+            }
+        }
+    }
+    return capturas;
+}
+
+bool Tablero::pumaEstaAcorralado(int posPuma) const {
+    std::lock_guard<std::mutex> lock(mtxTablero);
+    if (posPuma < 0 || posPuma >= static_cast<int>(casillas.size())) return false;
+
+    // 1. Revisar si tiene movimientos simples a casillas vacías
+    for (int v : casillas[posPuma].vecinos) {
+        if (casillas[v].estado == EstadoCasilla::VACIO) return false;
+    }
+
+    // 2. Revisar si tiene saltos de captura posibles
+    for (int v : casillas[posPuma].vecinos) {
+        if (casillas[v].estado == EstadoCasilla::PERRO) {
+            for (int salto : casillas[v].vecinos) {
+                if (salto != posPuma && casillas[salto].estado == EstadoCasilla::VACIO) {
+                    return false; // Puede capturar, no está acorralado
+                }
+            }
+        }
+    }
+
+    return true; // No tiene ningún movimiento válido disponible
 }

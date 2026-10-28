@@ -7,7 +7,7 @@
 struct ConfigJuego {
     int delayMin = 50;       // ms 
     int delayMax = 300;      // ms 
-    unsigned int seed = 42;  // Semilla aleatoria por defecto
+    unsigned int seed = 45;  // Semilla aleatoria por defecto
     
     int posPuma = 0;         // Vertice del trono por defecto
     std::vector<int> posPerros = {
