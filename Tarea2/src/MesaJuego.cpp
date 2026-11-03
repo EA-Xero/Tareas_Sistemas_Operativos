@@ -114,19 +114,19 @@ void MesaJuego::rutinaPerro(int idPerro) {
         auto posiciones = tablero.buscarPosicionesPerros();
         if (posiciones.empty()) continue;
 
-        // Determinar la posición de este perro específico
+        // Determinar la posicion de este perro especifico
         int posActual = posiciones[idPerro % posiciones.size()];
         auto vecinos = tablero.obtenerVecinosLibres(posActual);
 
         if (vecinos.empty()) continue;
 
-        // 2. Localizar la posición actual del Puma para calcular la estrategia
+        // 2. Localizar la posicion actual del Puma para calcular la estrategia
         int posPuma = tablero.buscarPosicionPuma();
         int destinoElegido = -1;
         std::string razon = "";
 
         if (posPuma != -1) {
-            // Estrategia A: Si algún vecino está al lado del Puma, priorizarlo para acorralarlo
+            // Estrategia A: Si algun vecino esta al lado del Puma, priorizarlo para acorralarlo
             for (int v : vecinos) {
                 if (tablero.esVecino(v, posPuma)) {
                     destinoElegido = v;
@@ -135,7 +135,7 @@ void MesaJuego::rutinaPerro(int idPerro) {
                 }
             }
 
-            // Estrategia B: Si no se puede acorralar directamente, elegir el vecino más cercano al Puma
+            // Estrategia B: Si no se puede acorralar directamente, elegir el vecino mas cercano al Puma
             if (destinoElegido == -1) {
                 int minDistancia = 999;
                 for (int v : vecinos) {
@@ -143,13 +143,13 @@ void MesaJuego::rutinaPerro(int idPerro) {
                     if (dist < minDistancia) {
                         minDistancia = dist;
                         destinoElegido = v;
-                        razon = "Reducción de distancia hacia el Puma (Distancia objetivo: " + std::to_string(dist) + ")";
+                        razon = "Reduccion de distancia hacia el Puma (Distancia objetivo: " + std::to_string(dist) + ")";
                     }
                 }
             }
         }
 
-        // Fallback: Si no hay estrategia clara o no se encontró al Puma, elegir al azar
+        // Fallback: Si no hay estrategia clara o no se encontro al Puma, elegir al azar
         if (destinoElegido == -1) {
             destinoElegido = vecinos[rng() % vecinos.size()];
             razon = "Movimiento exploratorio aleatorio (sin ruta directa identificada)";
@@ -160,7 +160,7 @@ void MesaJuego::rutinaPerro(int idPerro) {
             totalMovimientos++;
             escribirLog("[PERRO " + std::to_string(idPerro) + "] Movimiento de " + 
                        std::to_string(posActual) + " -> " + std::to_string(destinoElegido) + 
-                       " | Razón: " + razon);
+                       " | Razon: " + razon);
             escribirLog("ESTADO DEL TABLERO TRAS EL MOVIMIENTO:" + tablero.obtenerTableroComoString());
         }
     }
@@ -183,18 +183,21 @@ void MesaJuego::rutinaJuez() {
         // a mimir un ratico
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // Al despertar, revisa si ocurrió una nueva captura para registrarla en el Log de la mesa
+        // abandono de un jugador o SIGINT cierran la partida
+        if (verificarEventosExternos()) break;
+
+        // Al despertar, revisa si ocurrio una nueva captura para registrarla en el Log de la mesa
         if (perrosCapturados.load() > capturasPrevias) {
             capturasPrevias = perrosCapturados.load();
             escribirLog("[JUEZ] ¡EVENTO: Captura realizada! Perros restantes: " + std::to_string(12 - capturasPrevias));
         }
 
-        // 1. Condición de Victoria Puma (6 perros capturados)
+        // 1. Condicion de Victoria Puma (6 perros capturados)
         if (perrosCapturados.load() >= 6) {
             resultado = ResultadoPartida::VICTORIA_PUMA;
             juegoActivo = false;
 
-            // Notificación global a consola
+            // Notificacion global a consola
             std::cout << "[MESA " << idMesa << "] ¡VICTORIA DEL PUMA (Jugador " << idJugadorPuma 
                       << ")! Capturas: 6 | Movimientos totales: " << totalMovimientos.load() << std::endl;
 
@@ -207,13 +210,13 @@ void MesaJuego::rutinaJuez() {
             break;
         }
 
-        // 2. Condición de Victoria Perros (Puma acorralado)
+        // 2. Condicion de Victoria Perros (Puma acorralado)
         int posPuma = tablero.buscarPosicionPuma();
         if (posPuma != -1 && tablero.pumaEstaAcorralado(posPuma)) {
             resultado = ResultadoPartida::VICTORIA_PERROS;
             juegoActivo = false;
 
-            // Notificación global a consola
+            // Notificacion global a consola
             std::cout << "[MESA " << idMesa << "] ¡VICTORIA DE LOS PERROS (Jugador " << idJugadorPerros 
                       << ")! Motivo: Puma acorralado | Movimientos totales: " << totalMovimientos.load() << std::endl;
 
@@ -231,10 +234,10 @@ void MesaJuego::rutinaJuez() {
 // Inicia la partida, con configuracion de perro, puma y id ya cargada
 void MesaJuego::iniciarPartida() {
     juegoActivo = true;
-    hiloPuma = std::thread(&MesaJuego::rutinaPuma, this);
+    hiloPuma = std::thread(&MesaJuego::rutinaPumaProtegida, this);
 
     for (int i = 0; i < 12; ++i) {
-        hilosPerros.push_back(std::thread(&MesaJuego::rutinaPerro, this, i));
+        hilosPerros.push_back(std::thread(&MesaJuego::rutinaPerroProtegida, this, i));
     }
 
     hiloJuez = std::thread(&MesaJuego::rutinaJuez, this);
@@ -257,4 +260,87 @@ void MesaJuego::abortarPorDesconexion() {
     escribirLog("[ABORTADO] La partida finalizo abruptamente por desconexion/fallo.");
     juegoActivo = false;
     esperarTermino();
+}
+
+// Registra que un jugador se cayo. Solo escribe atomicos, asi que no bloquea y es seguro desde cualquier hilo.
+// compare_exchange: si ya habia un fallo registrado, el primero prevalece (no se pisa el ganador)
+void MesaJuego::reportarFalloJugador(int rol) noexcept {
+    int esperado = 0;
+    jugadorFallido.compare_exchange_strong(esperado, rol);
+}
+
+// Envoltorio del hilo Puma: una excepcion que escapa de un std::thread llama a std::terminate
+// y mata todo el torneo. Aqui se convierte en "el jugador Puma fallo".
+// Al propagarse la excepcion, los lock_guard (Tablero y log) liberan sus mutex por RAII.
+void MesaJuego::rutinaPumaProtegida() {
+    try { rutinaPuma(); } 
+    catch (const std::exception& e) {
+        reportarFalloJugador(1);
+        try { escribirLog(std::string("[FALLO] Hilo del Puma termino con excepcion: ") + e.what()); } catch (...) {} // e.what da el string de la excepcion
+    } 
+    catch (...) { reportarFalloJugador(1); }
+}
+
+// Idem para cada hilo de perro: el fallo de cualquiera se atribuye al jugador Perros
+void MesaJuego::rutinaPerroProtegida(int idPerro) {
+    try {
+        rutinaPerro(idPerro);
+    } catch (const std::exception& e) {
+        reportarFalloJugador(2);
+        try { escribirLog("[FALLO] Hilo del perro " + std::to_string(idPerro) +
+                          " termino con excepcion: " + e.what()); } catch (...) {}
+    } catch (...) { reportarFalloJugador(2); }
+}
+
+// Ejecutado SOLO por el hilo Juez en cada ciclo. Al ser el unico que cierra la partida, no hay
+// dos hilos escribiendo el resultado final ni haciendo join sobre los mismos hilos.
+bool MesaJuego::verificarEventosExternos() {
+    // Fallo simulado (config): "se cae" un jugador pasado cierto tiempo desde el inicio
+    if (config.falloJugador != 0 &&
+        (config.falloMesa == 0 || config.falloMesa == idMesa) &&
+        jugadorFallido.load() == 0 &&
+        std::chrono::steady_clock::now() - inicioPartida >= std::chrono::milliseconds(config.falloTrasMs)) {
+        escribirLog("[JUEZ] Fallo simulado: se desconecta el jugador " +
+                    std::string(config.falloJugador == 1 ? "Puma" : "Perros"));
+        reportarFalloJugador(config.falloJugador);
+    }
+
+    // Abandono: gana el oponente del jugador que fallo
+    int rol = jugadorFallido.load();
+    if (rol != 0) {
+        resultado = ResultadoPartida::ABANDONO;
+        juegoActivo = false; // los hilos restantes salen de su bucle y el Matchmaker los une
+
+        bool cayoPuma = (rol == 1);
+        int idCaido = cayoPuma ? idJugadorPuma : idJugadorPerros;
+        int idGanador = cayoPuma ? idJugadorPerros : idJugadorPuma;
+        std::string rolGanador = cayoPuma ? "PERROS" : "PUMA";
+
+        std::cout << "[MESA " << idMesa << "] ¡VICTORIA POR ABANDONO! Jugador " << idCaido
+                  << " (" << (cayoPuma ? "Puma" : "Perros") << ") fallo. Gana " << rolGanador
+                  << " (Jugador " << idGanador << ")." << std::endl;
+
+        escribirLog("\n=== FIN DE LA PARTIDA (ABANDONO) ===");
+        escribirLog("GANADOR: " + rolGanador + " (Jugador " + std::to_string(idGanador) + ") por abandono");
+        escribirLog("Motivo: El jugador " + std::to_string(idCaido) + " fallo o se desconecto.");
+        escribirLog("Movimientos totales registrados: " + std::to_string(totalMovimientos.load()));
+        escribirLog("ESTADO FINAL DEL TABLERO:" + tablero.obtenerTableroComoString());
+        return true;
+    }
+
+    // Interrupcion del servidor (SIGINT): cierre ordenado, sin un ganador
+    if (interrumpida.load()) {
+        resultado = ResultadoPartida::INTERRUMPIDA;
+        juegoActivo = false;
+
+        std::cout << "[MESA " << idMesa << "] Partida interrumpida por el servidor (SIGINT). Sin ganador." << std::endl;
+
+        escribirLog("\n=== FIN DE LA PARTIDA (INTERRUMPIDA) ===");
+        escribirLog("Motivo: El servidor recibio SIGINT; cierre ordenado, sin ganador.");
+        escribirLog("Movimientos totales registrados: " + std::to_string(totalMovimientos.load()));
+        escribirLog("ESTADO FINAL DEL TABLERO:" + tablero.obtenerTableroComoString());
+        return true;
+    }
+
+    return false;
 }

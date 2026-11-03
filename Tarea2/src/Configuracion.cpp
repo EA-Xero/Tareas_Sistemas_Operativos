@@ -49,6 +49,12 @@ bool ParserConfiguracion::cargarDesdeArchivo(const std::string& ruta, ConfigJueg
                     streamValor >> config.seed;
                 } else if (clave == "pos_puma") {
                     streamValor >> config.posPuma;
+                } else if (clave == "fallo_jugador") {
+                    streamValor >> config.falloJugador;
+                } else if (clave == "fallo_mesa") {
+                    streamValor >> config.falloMesa;
+                } else if (clave == "fallo_tras_ms") {
+                    streamValor >> config.falloTrasMs;
                 } else if (clave == "pos_perros") {
                     config.posPerros.clear();
                     int pos;
