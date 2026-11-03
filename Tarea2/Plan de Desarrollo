@@ -18,3 +18,11 @@ Plan de Desarrollo
      - Como se ve en el cambio anterior, hice que los perros tuvieran un acto mas estrategico a ver si ganan alguna
 
  - Fase 4: Resiliencia. Captura de la señal SIGINT (Ctrl+C) e interrupciones para cerrar todo de forma ordenada, asegurando cero fugas de memoria (memory leaks) y liberando los recursos del sistema.
+
+   Observacion al terminar fase 4:
+   El programa funciona. Ha sobrevivido stress-testing riguroso, los Logs se crean bien (incluso si me rehuso a leerlos porque son larguisimos), y el manejo de SIGINT funciona a la perfección. 
+   El problema es que ahora que subieron la rubrica oficial, me acordé que std::mutex no es POSIX, sino que el verdadero POSIX es pthread_mutex_t, por lo que tengo que cambiarlos todos a POSIX...
+   Otros problemas que aun faltan pulir serian:
+   - Tener "delay_min > delay_max" hace que el programa crashee porque "uniform_int_distribution(a, b)" exige que a <= b, y se me olvido validarlo. OOPS??!!
+   - Segun rubrica, los clientes llegan de manera concurrente, pero como el Matchmaker genera via bucle, no llegan de forma concurrente. 
+   - Los perros no ganan nunca. He corrido el codigo muchisimas veces (distintas semillas, configuraciones, etc) y siguen sin ganar, asi que hay un error por alguna parte, el cual falta encontrar.
