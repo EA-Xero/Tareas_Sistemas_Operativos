@@ -1,0 +1,6 @@
+# Puma acorralado en la esquina 3: perros en 1, 4, 8 y detras (0, 5, 13) para bloquear los saltos
+seed = 1
+delay_min = 250
+delay_max = 300
+pos_puma = 3
+pos_perros = 1 4 8 0 5 13 20 21 22 23 24 25

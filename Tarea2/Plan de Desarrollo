@@ -21,8 +21,5 @@ Plan de Desarrollo
 
    Observacion al terminar fase 4:
    El programa funciona. Ha sobrevivido stress-testing riguroso, los Logs se crean bien (incluso si me rehuso a leerlos porque son larguisimos), y el manejo de SIGINT funciona a la perfección. 
-   El problema es que ahora que subieron la rubrica oficial, me acordé que std::mutex no es POSIX, sino que el verdadero POSIX es pthread_mutex_t, por lo que tengo que cambiarlos todos a POSIX...
-   Otros problemas que aun faltan pulir serian:
-   - Tener "delay_min > delay_max" hace que el programa crashee porque "uniform_int_distribution(a, b)" exige que a <= b, y se me olvido validarlo. OOPS??!!
-   - Segun rubrica, los clientes llegan de manera concurrente, pero como el Matchmaker genera via bucle, no llegan de forma concurrente. 
-   - Los perros no ganan nunca. He corrido el codigo muchisimas veces (distintas semillas, configuraciones, etc) y siguen sin ganar, asi que hay un error por alguna parte, el cual falta encontrar.
+   Corregi todo para que utilizara solo metodos POSIX (por eso se invento Sync.HPP, para pasar los no-POSIX a POSIX facilmente), y encontré el error de la logica de movimiento, y es que el puma literalmente cheateaba y por eso siempre ganaba.
+   Asi que ahora los perros pueden ganar, se hace con POSIX, el readme esta listo, y el informe en desarrollo. Diria que la tarea fue un exito.

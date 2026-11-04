@@ -30,6 +30,7 @@ int main(int argc, char* argv[]) {
     if (argc >= 4) {
         ParserConfiguracion::cargarDesdeArchivo(argv[3], config);
     }
+    ParserConfiguracion::validar(config);
 
     //Inicia el torneo
     Matchmaker torneoServer(nJugadores, mMesas, config);

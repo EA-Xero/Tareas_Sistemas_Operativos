@@ -6,7 +6,7 @@
 #include <atomic>
 #include <random>
 #include <fstream>
-#include <mutex>
+#include "Sync.hpp"
 #include <chrono>
 #include "Tablero.hpp"
 #include "Configuracion.hpp"
@@ -33,7 +33,7 @@ private:
     std::atomic<ResultadoPartida> resultado{ResultadoPartida::EN_PROGRESO};
 
     std::ofstream archivoLog;
-    std::mutex mtxLog; // Mutex para escrituras seguras en el archivo de log
+    MutexPosix mtxLog; // Mutex para escrituras seguras en el archivo de log
 
     std::vector<std::thread> hilosPerros;
     std::thread hiloPuma;

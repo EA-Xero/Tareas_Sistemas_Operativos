@@ -6,7 +6,7 @@
 // Constructor
 Tablero::Tablero() {
     inicializarGrafo();
-    colocarPiezasIniciales();
+    // Las piezas las coloca MesaJuego con su config (antes se colocaban y se imprimian dos veces)
 }
 
 // Destructor
@@ -44,10 +44,13 @@ void Tablero::inicializarGrafo() {
     */
 
     // Conexión del trono con la fila superior de la grilla (Nodos 3, 4, 5, 6, 7)
+    // Segun la figura del enunciado: 1 -> esquina izq (3) y recto a 4; 2 -> recto a 6 y esquina der (7);
+    // y T baja recto hasta la casilla 5 (cruza la base 1-2 sin nodo)
     agregarArista(1, 3);
-    agregarArista(1, 5);
-    agregarArista(2, 5);
+    agregarArista(1, 4);
+    agregarArista(2, 6);
     agregarArista(2, 7);
+    agregarArista(0, 5);
     // Conecta el triangulo al cuadrado 5x5
 
 
@@ -76,7 +79,9 @@ void Tablero::colocarPiezasIniciales(const ConfigJuego& config) {
     // 1. Limpiamos estados
     for (auto& c : casillas) {
         c.estado = EstadoCasilla::VACIO;
+        c.idPieza = -1;
     }
+    capturasTotales = 0;
 
     // 2. Validar y ubicar la posición del Puma
     int posPumaActual = config.posPuma;
@@ -100,6 +105,7 @@ void Tablero::colocarPiezasIniciales(const ConfigJuego& config) {
         if (pos >= 0 && pos < static_cast<int>(casillas.size())) {
             if (posicionesOcupadas.find(pos) == posicionesOcupadas.end()) {
                 casillas[pos].estado = EstadoCasilla::PERRO;
+                casillas[pos].idPieza = perrosColocados; // el perro N queda asociado al hilo N
                 posicionesOcupadas.insert(pos);
                 perrosColocados++;
             } else {
@@ -116,6 +122,7 @@ void Tablero::colocarPiezasIniciales(const ConfigJuego& config) {
         for (int id = 27; id >= 0 && perrosColocados < 12; --id) {
             if (posicionesOcupadas.find(id) == posicionesOcupadas.end()) {
                 casillas[id].estado = EstadoCasilla::PERRO;
+                casillas[id].idPieza = perrosColocados;
                 posicionesOcupadas.insert(id);
                 perrosColocados++;
             }
@@ -126,17 +133,16 @@ void Tablero::colocarPiezasIniciales(const ConfigJuego& config) {
               << " y " << perrosColocados << " perros posicionados.\n";
 }
 
-// Getter para obtener el estado de una casilla específica, sabe si esta vacia, ocupada por un perro o por un puma
+// Getter para obtener el estado de una casilla especifica, sabe si esta vacia, ocupada por un perro o por un puma
 EstadoCasilla Tablero::getEstado(int id) const {
-    if (id >= 0 && id < static_cast<int>(casillas.size())) {
-        return casillas[id].estado;
-    }
+    GuardPosix lock(mtxTablero); // un lock para la verificacion
+    if (id >= 0 && id < static_cast<int>(casillas.size())) { return casillas[id].estado; }
     return EstadoCasilla::VACIO;
 }
 
 // Imprime el tablero en un formato de texto para que sea mas facil de leer
 std::string Tablero::obtenerTableroComoString() const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
 
     auto sim = [this](int id) -> std::string {
         switch (casillas[id].estado) {
@@ -170,7 +176,7 @@ std::string Tablero::obtenerTableroComoString() const {
 }
 
 std::vector<int> Tablero::obtenerVecinosLibres(int idCasilla) const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     std::vector<int> libres;
     if (idCasilla < 0 || idCasilla >= static_cast<int>(casillas.size())) return libres;
 
@@ -183,7 +189,7 @@ std::vector<int> Tablero::obtenerVecinosLibres(int idCasilla) const {
 }
 
 bool Tablero::intentarMoverPieza(int origen, int destino, EstadoCasilla tipoPieza) {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
 
     // Validar rangos
     if (origen < 0 || origen >= static_cast<int>(casillas.size()) ||
@@ -191,26 +197,40 @@ bool Tablero::intentarMoverPieza(int origen, int destino, EstadoCasilla tipoPiez
         return false;
     }
 
-    // Verificar que el origen mantenga la pieza esperada y el destino siga VACÍO
-    if (casillas[origen].estado == tipoPieza && casillas[destino].estado == EstadoCasilla::VACIO) {
+    // Verificar que el origen mantenga la pieza esperada y el destino siga VACIO
+    // El tablero arbitra: el movimiento debe ser a una casilla adyacente
+    if (adyacente(origen, destino) &&
+        casillas[origen].estado == tipoPieza && casillas[destino].estado == EstadoCasilla::VACIO) {
+        casillas[destino].idPieza = casillas[origen].idPieza; // la identidad viaja con la pieza
+        casillas[origen].idPieza = -1;
         casillas[origen].estado = EstadoCasilla::VACIO;
         casillas[destino].estado = tipoPieza;
         return true; // Movimiento exitoso
     }
 
-    return false; // Otra ficha ganó la casilla destino primero (Race condition evitada)
+    return false; // Otra ficha gano la casilla destino primero (Race condition evitada)
 }
 
 bool Tablero::intentarCapturaPuma(int origen, int intermedio, int destino) {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
 
-    if (casillas[origen].estado == EstadoCasilla::PUMA &&
+    // El tablero arbitra: valida rangos, adyacencia y que el salto sea en LINEA RECTA
+    int n = static_cast<int>(casillas.size());
+    if (origen < 0 || origen >= n || intermedio < 0 || intermedio >= n || destino < 0 || destino >= n) {
+        return false;
+    }
+
+    if (adyacente(origen, intermedio) && adyacente(intermedio, destino) &&
+        saltoRecto(origen, intermedio, destino) &&
+        casillas[origen].estado == EstadoCasilla::PUMA &&
         casillas[intermedio].estado == EstadoCasilla::PERRO &&
         casillas[destino].estado == EstadoCasilla::VACIO) {
 
         casillas[origen].estado = EstadoCasilla::VACIO;
         casillas[intermedio].estado = EstadoCasilla::VACIO; // El perro es capturado
+        casillas[intermedio].idPieza = -1;
         casillas[destino].estado = EstadoCasilla::PUMA;
+        capturasTotales++;
         return true;
     }
 
@@ -218,7 +238,7 @@ bool Tablero::intentarCapturaPuma(int origen, int intermedio, int destino) {
 }
 
 int Tablero::buscarPosicionPuma() const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     for (size_t i = 0; i < casillas.size(); ++i) {
         if (casillas[i].estado == EstadoCasilla::PUMA) {
             return static_cast<int>(i);
@@ -228,7 +248,7 @@ int Tablero::buscarPosicionPuma() const {
 }
 
 std::vector<int> Tablero::buscarPosicionesPerros() const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     std::vector<int> perros;
     for (size_t i = 0; i < casillas.size(); ++i) {
         if (casillas[i].estado == EstadoCasilla::PERRO) {
@@ -239,7 +259,7 @@ std::vector<int> Tablero::buscarPosicionesPerros() const {
 }
 
 std::vector<std::pair<int, int>> Tablero::obtenerCapturasPosiblesPuma(int posPuma) const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     std::vector<std::pair<int, int>> capturas;
 
     if (posPuma < 0 || posPuma >= static_cast<int>(casillas.size())) return capturas;
@@ -249,7 +269,8 @@ std::vector<std::pair<int, int>> Tablero::obtenerCapturasPosiblesPuma(int posPum
         if (casillas[vecinoId].estado == EstadoCasilla::PERRO) {
             // Buscar si hay una casilla vacía detrás
             for (int saltoId : casillas[vecinoId].vecinos) {
-                if (saltoId != posPuma && casillas[saltoId].estado == EstadoCasilla::VACIO) {
+                if (saltoId != posPuma && casillas[saltoId].estado == EstadoCasilla::VACIO &&
+                    saltoRecto(posPuma, vecinoId, saltoId)) {
                     capturas.push_back({vecinoId, saltoId});
                 }
             }
@@ -259,7 +280,7 @@ std::vector<std::pair<int, int>> Tablero::obtenerCapturasPosiblesPuma(int posPum
 }
 
 bool Tablero::pumaEstaAcorralado(int posPuma) const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     if (posPuma < 0 || posPuma >= static_cast<int>(casillas.size())) return false;
 
     // 1. Revisar si tiene movimientos simples a casillas vacías
@@ -271,7 +292,8 @@ bool Tablero::pumaEstaAcorralado(int posPuma) const {
     for (int v : casillas[posPuma].vecinos) {
         if (casillas[v].estado == EstadoCasilla::PERRO) {
             for (int salto : casillas[v].vecinos) {
-                if (salto != posPuma && casillas[salto].estado == EstadoCasilla::VACIO) {
+                if (salto != posPuma && casillas[salto].estado == EstadoCasilla::VACIO &&
+                    saltoRecto(posPuma, v, salto)) {
                     return false; // Puede capturar, no está acorralado
                 }
             }
@@ -282,7 +304,7 @@ bool Tablero::pumaEstaAcorralado(int posPuma) const {
 }
 
 bool Tablero::esVecino(int nodoA, int nodoB) const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     if (nodoA < 0 || nodoA >= (int)casillas.size()) return false;
     for (int v : casillas[nodoA].vecinos) {
         if (v == nodoB) return true;
@@ -292,7 +314,7 @@ bool Tablero::esVecino(int nodoA, int nodoB) const {
 
 // Cálculo de distancia mediante BFS simple en el grafo
 int Tablero::obtenerDistanciaGrafo(int origen, int destino) const {
-    std::lock_guard<std::mutex> lock(mtxTablero);
+    GuardPosix lock(mtxTablero);
     if (origen == destino) return 0;
 
     std::vector<int> dist(casillas.size(), -1);
@@ -315,4 +337,53 @@ int Tablero::obtenerDistanciaGrafo(int origen, int destino) const {
         }
     }
     return 999; // Si no hay camino
+}
+
+// ---- Agregados (version rubrica) ----
+
+// Auxiliar SIN lock: true si b es vecino directo de a en el grafo
+bool Tablero::adyacente(int a, int b) const {
+    for (int v : casillas[a].vecinos) {
+        if (v == b) return true;
+    }
+    return false;
+}
+
+// Auxiliar SIN lock: true si el salto a -> m -> b va en linea recta.
+// Dentro de la grilla (ids 3..27) basta comparar el desplazamiento (fila, columna) de ambos tramos.
+// Las lineas que pasan por el trono son pocas y se listan a mano segun la figura del enunciado.
+bool Tablero::saltoRecto(int a, int m, int b) const {
+    if (a >= 3 && m >= 3 && b >= 3) {
+        int dfA = (m - 3) / 5 - (a - 3) / 5, dcA = (m - 3) % 5 - (a - 3) % 5;
+        int dfB = (b - 3) / 5 - (m - 3) / 5, dcB = (b - 3) % 5 - (m - 3) % 5;
+        return dfA == dfB && dcA == dcB;
+    }
+    static const int lineas[5][3] = { {0, 1, 3}, {0, 2, 7}, {0, 5, 10}, {1, 4, 9}, {2, 6, 11} };
+    for (const auto& l : lineas) {
+        if ((a == l[0] && m == l[1] && b == l[2]) || (a == l[2] && m == l[1] && b == l[0])) return true;
+    }
+    return false;
+}
+
+// Posicion del perro con identidad idPerro (0..11), o -1 si ya fue capturado
+int Tablero::buscarPosicionPerroPorId(int idPerro) const {
+    GuardPosix lock(mtxTablero);
+    for (size_t i = 0; i < casillas.size(); ++i) {
+        if (casillas[i].estado == EstadoCasilla::PERRO && casillas[i].idPieza == idPerro) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+// Invariantes que el Juez comprueba: hay exactamente 1 Puma y perros en tablero + capturados = 12.
+// Todo se lee bajo UN solo lock, asi que es una foto coherente del tablero.
+bool Tablero::estadoConsistente() const {
+    GuardPosix lock(mtxTablero);
+    int pumas = 0, perros = 0;
+    for (const auto& c : casillas) {
+        if (c.estado == EstadoCasilla::PUMA) pumas++;
+        else if (c.estado == EstadoCasilla::PERRO) perros++;
+    }
+    return pumas == 1 && perros + capturasTotales == 12;
 }

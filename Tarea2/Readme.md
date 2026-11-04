@@ -1,44 +1,94 @@
-# Tarea 2 | Kamikan
 
-Eso si, Kamikan distinta distribucion, pero al fin y al cabo el mismo juego
+# Torneo de Komikan Concurrente - Tarea 2 Sistemas Operativos
 
-## Compilacion
- - Ubicarse en "Tareas_Sistemas_Operativos/Tarea2" y Escribir "Make" en la terminal, esta debe estar al mismo nivel del archivo "Makefile" presentado en la
- carpeta Tarea 2.
+Servidor de torneo multijugador en tiempo real basado en el juego tradicional mapuche "Komikan" (Puma vs. 12 Perros). Desarrollado en C++17, utilizando concurrencia por hilos y primitivas estrictas de POSIX (`pthread_mutex_t`, semaforos POSIX y manejo avanzado de señales).
 
-## Output
- - Archivos .out de los modulos se quedaran en la carpeta src
- - Carpeta Juego, para separar de los modulos
- - Archivo del torneo .out quedara en la carpeta Juego
- - Carpeta de Logs, abarcara archivos .log por mesa que tendran informacion relevante sobre las jugadas realizadas
+## Requisitos de Compilacion y Ejecucion
 
-## Iniciar juego
- - Si quieres colocar una configuracion en especifico, debes colocarla como parametro al ejecutar el archivo, recomiendo meterla en la carpeta de "ConfigFiles" para no tener archivos volando por ahi, una vez listo Ejecutar lo siguiente: "./Juego/torneo.out [N.jugadores] [M.Mesas] <config>"
-    el archivo config es un selector de dificultad practicamente, te deja colocar especificamente el piso y techo del tiempo de retardo de cada interaccion, posiciones del puma y de los perros y una semilla para que sepas que archivo cargaste o acciones de debug del codigo
+El proyecto cuenta con un `Makefile` optimizado para entornos Unix que cumple con las banderas de compilacion estricta exigidas:
 
-## Esperar juego
- - Luego de ejecutar eso, se asignaran pares y mesas, si faltan mesas esos jugadores esperaran y si el numero de jugadores es impar ese se queda sin pareja.
- - el detalle de movimientos, capturas y ganadores se guardaran en la carpeta Logs. Mientras que el tablero se dibujara en la terminal (a pesar de su forma en la terminal, el triangulo si esta conectado exactamente como lo pide la rubrica, pero es dificil dibujarlo exacto en la terminal)
+```bash
+make                                  # Compila usando: g++ -Wall -Wextra -std=c++17 -pthread
+./Juego/torneo N M [config.txt]             # Ejecucion (N = jugadores pares >= 2, M = mesas simultaneas > 0) [config.txt es el path al archivo de configuracion que se desea utilizar]
+make clean                            # Limpieza completa (binarios, objetos y registros Logs/)
+```
 
-## Termino
- - Al terminar las partidas, el programa finaliza, puedes verificar todo en los logs.
+### Ejemplos de uso (se asume que se encuentra en la carpeta Tarea2):
 
-## Limpiza
- - Cuando estes chato de jugar, ya no quieres tantos archivos encima, escribe "make clean", esto limpiara lo siguiente:
-    - Logs/
-    - Juego/
-    - src/*.o
- - Si quieres una limpieza explicita (por ejemplo borrar logs pero no game), puedes hacer lo siguiente:
-   - make clean: Ejecuta las tres inferiores al en secuencia
-   - make cleanSrc: Borra archivos.o de la carpeta src
-   - make cleanLogs: Borra la carpeta Logs y su contenido
-   - make cleanGame: Borra la carpeta Juego y su contenido
- - Basicamente te deja con lo mismo que como vino en el git
+```bash
+./Juego/torneo 20 4 ./ConfigFiles/config1.txt
+./juego/torneo 4 2 ./ConfigFiles/config_fallo_ejemplo.txt                            # Usa configuracion por defecto
 
-## Prueba
-Se realizo una prueba de 12.000 Jugadores, con 2000 Threads disponibles para mesas, el resultado (aproximado) se puede ver en el archivo adjunto "Rendimiento.png", donde a pesar de que se coloco 2000 Mesas disponibles, solo se usan unas 500 aprox, como se sabe esto?:
- - El programa principal (matchmaker) es 1 hilo
- - Luego, por cada mesa se abren 14 hilos mas, 12 perros, 1 puma y 1 Juez
-   En nuestro caso, 2000 x 14 = 28.000 hilos potenciales, pero como se ve en la captura, el procesador permite 6856 hilos, lo que equivale a: (6856)/14 = 489 mesas, es lo que es capaz de ejecutar la cpu en ese momento, aunque el limite de mesas sea mayor simplemente no puede llegar a la velocidad para usarlo completo (como se puede ver en el Load Average, que llega a 33 practicamente en una cpu de 4 cores T-T), el proceso es ligero en memoria, pero su uso masivo de threads realiza mucho context switching
- - Para arreglar esto abria que modificar bastante el codigo, pero asi se va a quedar pa la rubrica
- - En resumen, el rendimiento depende de la cantidad y la maquina que lo ejecute :)
+```
+
+Cada partida genera de forma automatica su propio archivo de registro detallado en la ruta `Logs/mesa_<id>.log`, conteniendo el estado del tablero tras cada movimiento y eventos del Juez.
+
+##  Archivo de Configuracion (config.txt)
+
+El sistema permite parametrizar la simulacion mediante un archivo de texto con formato `clave = valor` (las lineas con `#` o `//` son ignoradas como comentarios):
+
+| Clave | Descripcion | Valor por Defecto |
+| --- | --- | --- |
+| `delay_min`, `delay_max` | Rango de retardo en milisegundos entre decisiones de cada pieza
+
+ | `50`, `300` |
+| `seed` | Semilla para el generador de números pseudoaleatorios (`std::mt19937`)
+
+ | `45` |
+| `pos_puma` | Casilla inicial de ubicacion del Puma (0 a 27)
+
+ | `0` (Vertice del trono) |
+| `pos_perros` | Vector con las posiciones iniciales de los 12 perros
+
+ | `16..27` (Fondo del tablero) |
+| `fallo_jugador` | Inyeccion de fallos: `0` (ninguno), `1` (cae Puma), `2` (caen Perros)
+
+ | `0` |
+| `fallo_mesa` | Mesa afectada por la inyeccion de fallos (`0` = aplica a todas las mesas)
+
+ | `0` |
+| `fallo_tras_ms` | Tiempo en milisegundos de ejecucion antes de simular la desconexion
+
+ | `1000` |
+
+Nota de robustez: El parser incluye validaciones automaticas que corrigen anomalias en tiempo de ejecucion (por ejemplo, si `delay_min > delay_max`, se intercambian automaticamente).
+
+## Arquitectura y Decisiones de Sincronizacion
+
+### 1. Primitivas POSIX y RAII (Sync.hpp)
+
+Para cumplir estrictamente con los requisitos de evaluacion, se desarrollo un envoltorio orientado a objetos sobre la API nativa de POSIX:
+
+* `MutexPosix`: Envuelve un `pthread_mutex_t`, inicializandolos mediante `pthread_mutex_init` y destruyendolos de forma segura en el destructor (`pthread_mutex_destroy`).
+
+
+* `GuardPosix`: Implementa el patron RAII equivalente a `std::lock_guard`, adquiriendo el cerrojo al instanciarse y liberandolo automaticamente al salir del ambito (`return`, `break` o excepciones), previniendo bloqueos huerfanos.
+
+
+
+### 2. Control de Acceso al Tablero y Reglas
+
+* **Exclusion Mutua Fina**: Cada instancia de `Tablero` protege su estructura de grafo y estados con un `MutexPosix` exclusivo.
+
+
+* **Identidad Fija de Perros (`idPieza`)**: Cada uno de los 12 hilos de perros controla de forma univoca una pieza con identificador fijo (`0` a `11`). Si un perro es capturado por el Puma, el hilo detecta su eliminacion y finaliza ordenadamente.
+
+
+* **Invariantes del Juez**: El hilo arbitro de cada mesa verifica ciclicamente la consistencia global del tablero (`pumas == 1` y `perros_en_tablero + capturados == 12`).
+
+
+
+### 3. Servidor de Emparejamiento y Espera Pasiva (Matchmaker)
+
+* **Llegada Concurrente**: Cada cliente se simula como un hilo independiente que se encola tras un retardo aleatorio (`semJugadores` y `mtxCola`).
+
+
+* **Limite de Mesas (M)**: Se utiliza un semaforo POSIX (`sem_t semMesasDisponibles`) inicializado en M. Los hilos del servidor realizan una espera pasiva eficiente mediante `sem_wait` cuando todas las mesas estan ocupadas.
+
+
+
+### 4. Resiliencia y Manejo de Señales (SIGINT)
+
+* La señal de interrupcion de usuario (`Ctrl+C`) esta bloqueada globalmente en todos los hilos y es atendida de forma exclusiva por un hilo dedicado mediante **`sigwait`** y mascaras POSIX (`pthread_sigmask`). Al activarse, detiene la admision de nuevos clientes, notifica de forma ordenada a las mesas activas y libera todos los recursos del sistema operativo sin dejar fugas ni hilos colgados.
+
+

@@ -4,7 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <string>
-#include <mutex>
+#include "Sync.hpp"
 #include "Configuracion.hpp"
 
 // Estados posibles de cada posicion en el tablero
@@ -18,16 +18,22 @@ enum class EstadoCasilla {
 struct Casilla {
     int id;
     EstadoCasilla estado;
+    int idPieza = -1; // identidad fija de cada perro (0..11); -1 = vacio o Puma
     std::vector<int> vecinos; // Identificadores de casillas adyacentes validas
 };
 
 class Tablero {
 private:
     std::vector<Casilla> casillas;
-    mutable std::mutex mtxTablero; // Mutex para exclusion mutua en accesos y movimientos
+    mutable MutexPosix mtxTablero; // Mutex para exclusion mutua en accesos y movimientos
     
     // Funcion auxiliar interna para conectar dos nodos en el grafo
     void agregarArista(int u, int v);
+
+    int capturasTotales = 0; // perros capturados, contado dentro del mismo lock que el movimiento
+    // Auxiliares SIN lock: solo se llaman con mtxTablero ya tomado (el mutex no es recursivo)
+    bool adyacente(int a, int b) const;
+    bool saltoRecto(int a, int m, int b) const;
 
 public:
     Tablero();
@@ -60,6 +66,10 @@ public:
     bool pumaEstaAcorralado(int posPuma) const;
     bool esVecino(int nodoA, int nodoB) const;
     int obtenerDistanciaGrafo(int origen, int destino) const;
+
+    // Agregados: identidad fija de cada perro y chequeo de invariantes para el Juez
+    int buscarPosicionPerroPorId(int idPerro) const;
+    bool estadoConsistente() const;
 };
 
 #endif // TABLERO_HPP

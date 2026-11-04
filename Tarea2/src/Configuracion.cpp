@@ -70,3 +70,17 @@ bool ParserConfiguracion::cargarDesdeArchivo(const std::string& ruta, ConfigJueg
     std::cout << "[CONFIG] Archivo '" << ruta << "' cargado exitosamente.\n";
     return true;
 }
+// uniform_int_distribution(a, b) exige a <= b (si no, comportamiento indefinido), por eso se valida antes de jugar
+void ParserConfiguracion::validar(ConfigJuego& c) {
+    if (c.delayMin < 0) { std::cerr << "[ADVERTENCIA] delay_min negativo, se usa 0.\n"; c.delayMin = 0; }
+    if (c.delayMax < 0) { std::cerr << "[ADVERTENCIA] delay_max negativo, se usa 0.\n"; c.delayMax = 0; }
+    if (c.delayMin > c.delayMax) {
+        std::cerr << "[ADVERTENCIA] delay_min > delay_max, se intercambian.\n";
+        std::swap(c.delayMin, c.delayMax);
+    }
+    if (c.falloJugador < 0 || c.falloJugador > 2) {
+        std::cerr << "[ADVERTENCIA] fallo_jugador fuera de rango (0-2), se desactiva.\n";
+        c.falloJugador = 0;
+    }
+    if (c.falloTrasMs < 0) c.falloTrasMs = 0;
+}

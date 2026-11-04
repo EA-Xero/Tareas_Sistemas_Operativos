@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <system_error>
 #include <functional> // necesario para function<void()>
+#include <random>
+#include <chrono>
 
 // Archivo encargado de actuar como Juez y Emparejador de jugadores, maneja las mesas
 
@@ -24,9 +26,7 @@ y se borran cuando la mesa se va.
 
 std::move(fn) es basicamente un static_cast. transforma el objeto en un rvalue (valor apunto de vencer), cambiando la interpretacion del objeto en si. Para explicar como funciona, necesitas entender fundamentalmente como el compilador trabaja las variables segun su definicion.
 Basicamente, si hiciera f = fn, el compilador asume que fn seguira existiendo despues, por lo que futuros llamados lo tratarian como copias para no arriesgar a vaciar el valor original, causando un uso absurdo de recursos.
-pero haciendolo un rvalue, el compilador sabe que no va a existir despues, por lo que simplemente mueve los punteros y recursos de la funcion hacia el objeto, haciendo que el objeto original (fn) quede en un estado valido pero sin especificar (como un NULLPTR), y 
-f con los punteros y memoria que este tenia. Entonces, como literalmente dice el nombre, mueves los recursos de la funcion hacia el objeto, en vez de crear la variable y copiarle los valores de la funcion. Esto hace que la limpieza de recursos sea mucho mas rapida y ligera, 
-pues no desperdicias memoria en crear copias de algo que se va a cerrar inmediatamente despues.
+pero haciendolo un rvalue, el compilador sabe que no va a existir despues, por lo que simplemente mueve los punteros y recursos de la funcion hacia el objeto, haciendo que el objeto original (fn) quede en un estado sin especificar (como un NULLPTR), y f con los punteros y memoria que este tenia. Entonces, como literalmente dice el nombre, mueves los recursos de la funcion hacia el objeto, en vez de crear la variable y copiarle los valores de la funcion. Esto hace que la limpieza de recursos sea mucho mas rapida y ligera, pues no desperdicias memoria en crear copias de algo que se va a cerrar inmediatamente despues.
 
 Si lo quieres leer por tu cuenta:
 https://www.geeksforgeeks.org/cpp/resource-acquisition-is-initialization/
@@ -39,13 +39,13 @@ class AlSalir {
     std::function<void()> f; 
 public:
     explicit AlSalir(std::function<void()> fn) : f(std::move(fn)) {} 
-    // explicit evita conversiones implicitas. AlSalir(F fn) recibe 
+// explicit evita conversiones implicitas. AlSalir(F fn) recibe 
     // la funcion de limpieza y f(move(fn)) la mueve al atributo f, haciendo que sea mas segura a la hora de tomar funciones lambda por referencia (&mesa).
     // los dos puntos sirven para inicializar la variable antes de crearla, por lo que f se crea una vez ya asignada a la funcion de limpieza.
     ~AlSalir() { if (f) f(); } // Destructor que ejecuta la funcion de limpieza. Se ejecuta cuando sale de su scope (sea termino, return, o exception).
     AlSalir(const AlSalir&) = delete; // constructor de copia de la clase
     AlSalir& operator=(const AlSalir&) = delete; // operador de asignacion de la clase
-    // Se borran ambos constructor de copia y operador de asignacion. Dado que cada objeto AlSalir se vincula a la existencia de una mesa, borrarlos
+// Se borran ambos constructor de copia y operador de asignacion. Dado que cada objeto AlSalir se vincula a la existencia de una mesa, borrarlos
     // asegura que los objetos sean unicos e intransferibles por mesa.
 };
 }
@@ -54,12 +54,14 @@ public:
 Matchmaker::Matchmaker(int N, int M, const ConfigJuego& cfg)
     : totalJugadores(N), maxMesasConcurrentes(M), config(cfg) {
     sem_init(&semMesasDisponibles, 0, maxMesasConcurrentes);
+    sem_init(&semJugadores, 0, 0);
 }
 
 // Destructor
 Matchmaker::~Matchmaker() {
-    detenerManejoSenales(); // idempotente: por si iniciarTorneo salio antes de tiempo
+    detenerManejoSenales(); // idempotente (busca la definicion si no sabes). por si iniciarTorneo salio antes de tiempo
     sem_destroy(&semMesasDisponibles);
+    sem_destroy(&semJugadores);
 }
 
 /* SIGINT
@@ -99,8 +101,10 @@ void Matchmaker::notificarInterrupcion() {
 
     // Si el Matchmaker esta bloqueado en sem_wait esperando slot, esto lo despierta
     sem_post(&semMesasDisponibles);
+    // Y si estaba esperando a que llegara un jugador, tambien
+    sem_post(&semJugadores);
 
-    std::lock_guard<std::mutex> lock(mtxMesasActivas);
+    GuardPosix lock(mtxMesasActivas);
     for (MesaJuego* mesa : mesasActivas) {
         mesa->solicitarDetencion();
     }
@@ -123,13 +127,13 @@ void Matchmaker::detenerManejoSenales() {
 // (el chequeo de "detener" y el registro ocurren bajo el mismo mutex que usa notificarInterrupcion,
 // para que ninguna mesa pueda quedar sin avisar).
 void Matchmaker::registrarMesa(MesaJuego* mesa) {
-    std::lock_guard<std::mutex> lock(mtxMesasActivas);
+    GuardPosix lock(mtxMesasActivas);
     mesasActivas.push_back(mesa);
-    if (detener.load()) mesa->solicitarDetencion();
+    if (detener.load()) mesa->solicitarDetencion(); // si lee el valor de variable y es true, se solicita detencion
 }
 
 void Matchmaker::desregistrarMesa(MesaJuego* mesa) {
-    std::lock_guard<std::mutex> lock(mtxMesasActivas);
+    GuardPosix lock(mtxMesasActivas);
     mesasActivas.erase(std::remove(mesasActivas.begin(), mesasActivas.end(), mesa), mesasActivas.end());
 }
 
@@ -146,6 +150,33 @@ bool Matchmaker::esperarSlot() {
     return true;
 }
 
+// Rutina de cada cliente: llega tras un retardo aleatorio (0-200 ms) y se encola.
+// Tras SIGINT ya no llegan mas jugadores.
+void Matchmaker::llegadaJugador(int id) {
+    std::mt19937 rng(config.seed + id);
+    std::uniform_int_distribution<int> dist(0, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
+    if (detener.load()) return;
+    {
+        GuardPosix lock(mtxCola);
+        colaJugadores.push(id);
+    }
+    std::cout << "[MATCHMAKER] Llega el jugador " << id << ".\n";
+    sem_post(&semJugadores); // avisa al Matchmaker que hay un jugador mas en cola
+}
+
+// Espera pasiva (sem_wait) hasta que haya un jugador en cola y lo saca. false = SIGINT o error.
+bool Matchmaker::esperarJugador(int& id) {
+    while (sem_wait(&semJugadores) == -1) {
+        if (errno != EINTR) return false;
+    }
+    if (detener.load()) return false;
+    GuardPosix lock(mtxCola);
+    id = colaJugadores.front();
+    colaJugadores.pop();
+    return true;
+}
+
 // Inicializa el juego una vez leido y confirmado todo
 void Matchmaker::iniciarTorneo() {
     std::cout << "\n==================================================\n";
@@ -159,8 +190,20 @@ void Matchmaker::iniciarTorneo() {
     // bloquear SIGINT y levantar el hilo que lo espera antes de crear mas hilos
     iniciarManejoSenales();
 
+    // Llegada concurrente: un hilo cliente por jugador (despues de iniciarManejoSenales, hereda la mascara)
+    int clientesLanzados = 0;
+    for (int j = 1; j <= totalJugadores; ++j) {
+        try {
+            hilosClientes.emplace_back(&Matchmaker::llegadaJugador, this, j);
+            ++clientesLanzados;
+        } catch (const std::system_error& e) {
+            std::cerr << "[MATCHMAKER] No se pudo crear el cliente " << j << ": " << e.what() << "\n";
+            break;
+        }
+    }
+
     // Calcula total de emparejamiento posible
-    int parejasTotales = totalJugadores / 2;
+    int parejasTotales = clientesLanzados / 2;
     std::vector<std::thread> hilosMesas;
     int mesasLanzadas = 0;
 
@@ -169,9 +212,12 @@ void Matchmaker::iniciarTorneo() {
         // tras SIGINT no llegan mas jugadores
         if (detener.load()) break;
 
-        int idPuma = i * 2 + 1;
-        int idPerros = i * 2 + 2;
+        // Empareja a los dos siguientes jugadores que lleguen: el 1ro juega de Puma y el 2do de Perros
+        int idPuma = 0, idPerros = 0;
+        if (!esperarJugador(idPuma) || !esperarJugador(idPerros)) break;
         int idMesa = i + 1;
+        std::cout << "\n[MATCHMAKER] Pareja formada: Jugador " << idPuma << " (Puma) vs Jugador "
+                  << idPerros << " (Perros).\n";
 
         //Espera con semaforo si se llega al limite de mesas
         std::cout << "\n[MATCHMAKER] Esperando slot para Mesa " << idMesa << "...\n";
@@ -215,9 +261,10 @@ void Matchmaker::iniciarTorneo() {
     }
 
     //Hace join de los hilos de mesas
-    for (auto& h : hilosMesas) {
-        if (h.joinable()) h.join();
-    }
+    for (auto& h : hilosMesas) { if (h.joinable()) h.join(); }
+
+    // Los clientes ya llegaron (o salieron por SIGINT): se les hace join
+    for (auto& h : hilosClientes) { if (h.joinable()) h.join(); }
 
     // Todas las mesas terminaron, por lo que ya no se necesita el hilo de senales
     detenerManejoSenales();
@@ -229,8 +276,8 @@ void Matchmaker::iniciarTorneo() {
     }
 
     // Si no hay pareja disponible para un jugador
-    if (totalJugadores % 2 != 0) {
-        std::cout << "\n[MATCHMAKER] Jugador " << totalJugadores << " quedo sin pareja disponible.\n";
+    if (clientesLanzados % 2 != 0) {
+        std::cout << "\n[MATCHMAKER] Jugador " << clientesLanzados << " quedo sin pareja disponible.\n";
     }
 
     std::cout << "\n[TORNEO] Torneo completado exitosamente.\n";

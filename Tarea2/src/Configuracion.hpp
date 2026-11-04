@@ -25,6 +25,8 @@ struct ConfigJuego {
 class ParserConfiguracion {
 public:
     static bool cargarDesdeArchivo(const std::string& ruta, ConfigJuego& config);
+    // Corrige valores invalidos (retardos negativos o min > max, fallo fuera de rango)
+    static void validar(ConfigJuego& config);
 };
 
 #endif // CONFIGURACION_HPP

@@ -3,10 +3,11 @@
 
 #include <vector>
 #include <atomic>
-#include <mutex>
+#include <queue>
 #include <thread>
 #include <csignal>
 #include <semaphore.h>
+#include "Sync.hpp"
 #include "MesaJuego.hpp"
 #include "Configuracion.hpp"
 
@@ -19,11 +20,19 @@ private:
 
     // Resiliencia ante SIGINT
     std::atomic<bool> detener{false};        // true = no aceptar mas jugadores y cerrar las partidas
-    std::mutex mtxMesasActivas;              // protege mesasActivas
+    MutexPosix mtxMesasActivas;              // protege mesasActivas
     std::vector<MesaJuego*> mesasActivas;    // registro de partidas en curso, para notificarlas
     sigset_t mascaraSenales;                 // contiene solo SIGINT
     std::thread hiloSenales;                 // hilo dedicado que espera SIGINT con sigwait
     std::atomic<bool> finalizandoSenales{false};
+
+    // Llegada concurrente de clientes: cada jugador es un hilo que se encola al llegar
+    sem_t semJugadores;                      // cuenta los jugadores esperando en la cola
+    MutexPosix mtxCola;                      // protege colaJugadores
+    std::queue<int> colaJugadores;
+    std::vector<std::thread> hilosClientes;
+    void llegadaJugador(int id);             // rutina de cada cliente
+    bool esperarJugador(int& id);            // saca al siguiente jugador (espera pasiva); false si hay SIGINT
 
     void iniciarManejoSenales();
     void detenerManejoSenales();

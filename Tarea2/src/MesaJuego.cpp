@@ -37,7 +37,7 @@ MesaJuego::~MesaJuego() {
 
 // Lo dice el nombre ;V
 void MesaJuego::escribirLog(const std::string& mensaje) {
-    std::lock_guard<std::mutex> lock(mtxLog);
+    GuardPosix lock(mtxLog);
     if (archivoLog.is_open()) {
         archivoLog << mensaje << std::endl;
     }
@@ -110,12 +110,12 @@ void MesaJuego::rutinaPerro(int idPerro) {
         esperarRetardoAleatorio(rng);
         if (!juegoActivo) break;
 
-        // 1. Obtener todas las posiciones actuales de los perros
-        auto posiciones = tablero.buscarPosicionesPerros();
-        if (posiciones.empty()) continue;
-
-        // Determinar la posicion de este perro especifico
-        int posActual = posiciones[idPerro % posiciones.size()];
+        // 1. Cada hilo controla SIEMPRE al mismo perro (identidad fija dentro del tablero)
+        int posActual = tablero.buscarPosicionPerroPorId(idPerro);
+        if (posActual == -1) { // su perro fue capturado: el hilo ya no tiene pieza que mover
+            escribirLog("[PERRO " + std::to_string(idPerro) + "] Capturado, su hilo termina.");
+            break;
+        }
         auto vecinos = tablero.obtenerVecinosLibres(posActual);
 
         if (vecinos.empty()) continue;
@@ -186,6 +186,11 @@ void MesaJuego::rutinaJuez() {
         // abandono de un jugador o SIGINT cierran la partida
         if (verificarEventosExternos()) break;
 
+        // El Juez verifica los invariantes del tablero en cada ciclo
+        if (!tablero.estadoConsistente()) {
+            escribirLog("[JUEZ] ALERTA: estado del tablero inconsistente");
+        }
+
         // Al despertar, revisa si ocurrio una nueva captura para registrarla en el Log de la mesa
         if (perrosCapturados.load() > capturasPrevias) {
             capturasPrevias = perrosCapturados.load();
@@ -199,7 +204,7 @@ void MesaJuego::rutinaJuez() {
 
             // Notificacion global a consola
             std::cout << "[MESA " << idMesa << "] ¡VICTORIA DEL PUMA (Jugador " << idJugadorPuma 
-                      << ")! Capturas: 6 | Movimientos totales: " << totalMovimientos.load() << std::endl;
+                      << ")! Capturas: " << perrosCapturados.load() << " | Movimientos totales: " << totalMovimientos.load() << std::endl;
 
             // Registro en Log
             escribirLog("\n=== FIN DE LA PARTIDA ===");
